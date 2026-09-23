@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a0ccd8-7e85-72e2-9287-a11b48b9ef62"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll read note.txt.\n"}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'cat note.txt'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'cat note.txt'","aggregated_output":"secret word: pineapple\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"pineapple"}}
+{"type":"turn.completed","usage":{"input_tokens":49317,"cached_input_tokens":32256,"cache_write_input_tokens":0,"output_tokens":111,"reasoning_output_tokens":61}}
