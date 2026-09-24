@@ -58,7 +58,7 @@ export interface Adapter {
   readonly name: AgentName;
   readonly command: string;
   /** Computes extra args once per server process (e.g. which MCP servers to switch off). */
-  prepare?(run: Runner, cwd: string): Promise<readonly string[]>;
+  prepare?(run: Runner, cwd: string, signal?: AbortSignal): Promise<readonly string[]>;
   build(request: AskRequest, prompt: string, extraArgs: readonly string[]): Invocation;
   /** Throws when the output holds an error or no answer. */
   parse(stdout: string): Reply;

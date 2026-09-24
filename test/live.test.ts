@@ -34,4 +34,21 @@ describe.skipIf(!live)("live MCP server", () => {
       await client.close();
     }
   });
+
+  it("asks every agent as a panel in parallel", { timeout: 600_000 }, async () => {
+    const client = new Client({ name: "live-test", version: "0" });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "serve"], cwd: root }));
+    try {
+      const res = await client.callTool(
+        { name: "ask_agents", arguments: { agents: [...AGENTS], question: "Read package.json. Reply with only the value of its name field." } },
+        undefined,
+        { timeout: 600_000 },
+      );
+      const { results } = res.structuredContent as { results: { agent: string; answer?: string; error?: string }[] };
+      expect(results.map((r) => r.agent)).toEqual([...AGENTS]);
+      for (const r of results) expect(r.answer?.toLowerCase(), `${r.agent}: ${r.error}`).toContain("consult-mcp");
+    } finally {
+      await client.close();
+    }
+  });
 });

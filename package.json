@@ -1,18 +1,53 @@
 {
-  "name": "consult",
-  "version": "0.1.0",
-  "description": "MCP server that lets coding agents consult each other through the signed-in claude, codex and grok CLIs",
-  "main": "dist/consult.js",
-  "directories": {
-    "test": "test"
+  "name": "consult-mcp",
+  "version": "0.2.0",
+  "description": "MCP server that lets Claude Code, Codex and Grok ask each other for a second opinion through the CLIs already signed in on your machine",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude-code",
+    "codex",
+    "grok",
+    "ai-agents",
+    "second-opinion",
+    "code-review"
+  ],
+  "homepage": "https://consult.n3el.dev",
+  "bugs": {
+    "url": "https://github.com/neelsatyavolu/consult/issues"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neelsatyavolu/consult.git"
+  },
+  "license": "MIT",
+  "author": "Neel Satyavolu (https://n3el.dev)",
+  "type": "module",
+  "bin": {
+    "consult": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "test": "vitest run",
-    "test:live": "CONSULT_LIVE=1 vitest run test/live.test.ts"
+    "test:live": "CONSULT_LIVE=1 vitest run test/live.test.ts",
+    "prepublishOnly": "npm run build && npm test"
   },
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "smol-toml": "^1.9.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -20,12 +55,7 @@
     "typescript": "^5.9.3",
     "vitest": "^5.0.1"
   },
-  "type": "module",
-  "bin": {
-    "consult": "dist/cli.js"
-  },
-  "engines": {
-    "node": ">=22"
-  },
-  "private": true
+  "publishConfig": {
+    "access": "public"
+  }
 }

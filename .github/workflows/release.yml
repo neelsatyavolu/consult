@@ -1,0 +1,41 @@
+# Push a tag like v0.3.0 (matching package.json) to publish to npm and cut a GitHub release.
+# Publishing uses npm trusted publishing (OIDC), so no npm token is stored in the repo.
+# Every user's host runs @latest on its next session, so this job is kept minimal: no persisted
+# git credentials, and dependency install scripts don't run while the OIDC token is available.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - name: Check the tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm ci --ignore-scripts
+      # Pre-releases (v1.2.0-rc.1) go to the "next" dist-tag so @latest users never get them.
+      - name: Publish
+        run: |
+          case "$GITHUB_REF_NAME" in *-*) tag=next;; *) tag=latest;; esac
+          npm publish --provenance --access public --tag "$tag"
+      - name: GitHub release
+        run: |
+          case "$GITHUB_REF_NAME" in *-*) pre=--prerelease;; *) pre=;; esac
+          gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag $pre
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

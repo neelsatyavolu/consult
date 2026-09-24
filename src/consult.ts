@@ -38,7 +38,7 @@ export function createConsult({ run, adapters, timeoutMs }: ConsultDeps) {
     const adapter = adapters[request.agent];
     const started = Date.now();
     // Computed per call, never cached: containment must reflect the config as it is right now.
-    const extraArgs = adapter.prepare ? await adapter.prepare(run, request.cwd) : [];
+    const extraArgs = adapter.prepare ? await adapter.prepare(run, request.cwd, signal) : [];
     const invocation = adapter.build(request, framePrompt(request.question, Boolean(request.sessionId)), extraArgs);
     const res = await run(invocation.command, invocation.args, { cwd: request.cwd, timeoutMs, signal });
 

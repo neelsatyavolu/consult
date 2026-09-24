@@ -6,8 +6,8 @@ const PLUGINS_OFF = ["-c", "features.plugins=false"] as const;
 // Codex runs MCP tools outside its shell sandbox, so the advisor gets none: plugins are switched off
 // (they bring their own MCP servers) and every server still enabled is disabled by name.
 // That includes consult itself, which is what stops advisors from consulting each other in a loop.
-async function listEnabledMcpServers(run: Parameters<NonNullable<Adapter["prepare"]>>[0], cwd: string) {
-  const res = await run("codex", ["mcp", "list", "--json", ...PLUGINS_OFF], { cwd, timeoutMs: 30_000 });
+async function listEnabledMcpServers(run: Parameters<NonNullable<Adapter["prepare"]>>[0], cwd: string, signal?: AbortSignal) {
+  const res = await run("codex", ["mcp", "list", "--json", ...PLUGINS_OFF], { cwd, timeoutMs: 30_000, signal });
   if (res.code !== 0) {
     throw new AdvisorError(`could not list codex MCP servers to disable them: ${res.stderr.trim().slice(-500)}`);
   }
@@ -19,8 +19,8 @@ export const codex: Adapter = {
   name: "codex",
   command: "codex",
 
-  async prepare(run, cwd) {
-    const names = await listEnabledMcpServers(run, cwd);
+  async prepare(run, cwd, signal) {
+    const names = await listEnabledMcpServers(run, cwd, signal);
     return [...PLUGINS_OFF, ...names.flatMap((n) => ["-c", `mcp_servers.${n}.enabled=false`])];
   },
 

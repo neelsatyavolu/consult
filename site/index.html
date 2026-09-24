@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>consult — a second opinion for your coding agents</title>
+  <meta name="description" content="An open-source MCP server that lets Claude Code, Codex and Grok ask each other for advice through the CLIs you're already signed in to. No API keys.">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <link rel="canonical" href="https://consult.n3el.dev/">
+  <meta property="og:title" content="consult — a second opinion for your coding agents">
+  <meta property="og:description" content="Claude Code, Codex and Grok ask each other for advice through the CLIs you're already signed in to. Read-only, no API keys, one command to install.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://consult.n3el.dev/">
+  <meta property="og:image" content="https://consult.n3el.dev/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="consult: Claude Code asks Codex for a second opinion">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/app.js"></script>
+  <script defer src="https://analytics.n3el.dev/p.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav wrap">
+    <a class="brand" href="/" aria-label="consult home">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <circle cx="8" cy="12" r="6" class="mark-a"/>
+        <circle cx="16" cy="12" r="6" class="mark-b"/>
+      </svg>
+      <span>consult</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#tools">Tools</a>
+      <a href="#containment">Safety</a>
+      <a href="#install">Install</a>
+      <a class="nav-gh" href="https://github.com/neelsatyavolu/consult">
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <h1 id="hero-title">Let your coding agents get a second opinion.</h1>
+        <p class="lede">consult is an MCP server that lets <span class="who who-claude">Claude Code</span>, <span class="who who-codex">Codex</span> and <span class="who who-grok">Grok</span> ask each other for advice, through the CLIs you’re already signed in to. No API keys. It runs on the subscriptions you already have.</p>
+
+        <div class="command" data-copy-wrap>
+          <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest install</code>
+          <button class="copy" type="button" data-copy="npx -y consult-mcp@latest install" hidden>Copy</button>
+        </div>
+        <p class="fineprint">Registers with every agent CLI it finds and stays up to date on its own. Node 22+, macOS or Linux. <a href="#install">Install details</a></p>
+      </div>
+
+      <figure class="thread" aria-label="Example: Claude Code asks Codex for a second opinion">
+        <figcaption class="thread-head">
+          <span>Claude Code, working in <span class="mono">acme/api</span></span>
+          <span class="thread-model mono">opus</span>
+        </figcaption>
+
+        <ol class="turns">
+          <li class="turn turn-claude">
+            <span class="speaker">claude</span>
+            <div class="body">
+              <p>I’ve added a mutex and duplicate rows still show up. Asking Codex before I try a third fix.</p>
+              <pre class="call"><code><span class="fn">ask_agent</span>
+  agent    <span class="str">"codex"</span>
+  model    <span class="str">"gpt-6-astra"</span>
+  question <span class="str">"Two concurrent sync() calls
+           sometimes insert the same row
+           twice. I lock around the write
+           in src/sync.ts:42 and it still
+           happens. What am I missing?"</span></code></pre>
+            </div>
+          </li>
+
+          <li class="turn turn-progress" aria-hidden="true">
+            <span class="speaker">codex</span>
+            <div class="body">
+              <p class="progress"><span class="pulse"></span>reading src/sync.ts, src/db/rows.ts</p>
+            </div>
+          </li>
+
+          <li class="turn turn-codex">
+            <span class="speaker">codex</span>
+            <div class="body">
+              <p>The lock only covers the write. The existence check at <span class="mono">src/sync.ts:31</span> runs before you take it, so both calls see the row as missing and both insert.</p>
+              <p>Make the insert an upsert on <span class="mono">(account_id, remote_id)</span> and let the database settle it. Unlike the mutex, that also holds when the worker process syncs at the same time.</p>
+              <p class="meta mono">agent: codex · model: gpt-6-astra · session_id: 0199c4e1 · 38.4s</p>
+            </div>
+          </li>
+
+          <li class="turn turn-claude">
+            <span class="speaker">claude</span>
+            <div class="body">
+              <p>That’s the bug. Switching to an upsert and removing the mutex.</p>
+            </div>
+          </li>
+        </ol>
+      </figure>
+    </section>
+
+    <section id="tools" class="section wrap" aria-labelledby="tools-title">
+      <div class="section-head">
+        <h2 id="tools-title">Three tools your agent can call</h2>
+        <p>Advisors get read-only access to the repo, so your agent points at files instead of pasting them. Progress streams back while they think. Most calls finish in under a minute and none run past 15.</p>
+      </div>
+
+      <dl class="tools">
+        <div class="tool">
+          <dt><code><span class="fn">ask_agent</span>(agent, question, model?, effort?, session_id?, cwd?)</code></dt>
+          <dd>Ask one advisor. The reply carries a <code>session_id</code>; pass it back to ask a follow-up in the same conversation.</dd>
+        </div>
+        <div class="tool">
+          <dt><code><span class="fn">ask_agents</span>(agents[], question, effort?, cwd?)</code></dt>
+          <dd>Ask a panel. Two or three advisors work in parallel and their answers come back side by side, so you can see where they agree and where they don’t.</dd>
+        </div>
+        <div class="tool">
+          <dt><code><span class="fn">list_agents</span>()</code></dt>
+          <dd>Which agent CLIs are installed, their versions, and the models your account can use.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="section wrap" aria-labelledby="when-title">
+      <div class="section-head">
+        <h2 id="when-title">It tells your agent when to ask</h2>
+        <p>consult ships with instructions for the agent that hosts it, so it asks at the moments that pay off instead of on every turn:</p>
+      </div>
+      <ul class="moments">
+        <li><strong>Stuck after two fixes that didn’t work.</strong> A third guess from the same model usually fails the same way.</li>
+        <li><strong>Before a decision that’s hard to undo</strong>, like a schema, a public API or a data migration.</li>
+        <li><strong>Before calling work done</strong>, with a plan or a diff to review.</li>
+      </ul>
+      <p class="aside">It also nudges agents to ask a different vendor than themselves. Different training catches different mistakes.</p>
+    </section>
+
+    <section id="containment" class="section wrap" aria-labelledby="containment-title">
+      <div class="section-head">
+        <h2 id="containment-title">Advisors can read. They can’t touch.</h2>
+        <p>Every advisor runs headless, read-only and with no MCP servers. It can’t edit files or run commands that change anything, and it can’t call consult back, so two agents can never get stuck consulting each other.</p>
+      </div>
+
+      <div class="table-scroll" role="region" aria-labelledby="containment-title" tabindex="0">
+        <table class="flags">
+          <thead>
+            <tr><th scope="col">Advisor</th><th scope="col">How consult runs it</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><span class="who who-claude">claude</span></th>
+              <td><code>-p --restricted --tools Read,Grep,Glob --strict-mcp-config</code></td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="who who-codex">codex</span></th>
+              <td><code>exec</code> with <code>sandbox_mode="read-only"</code> and <code>approval_policy="never"</code>, plugins off, every MCP server disabled by name</td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="who who-grok">grok</span></th>
+              <td><code>--tools read_file,grep,list_dir</code>, with the MCP helper tools disallowed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="aside">Advisors read files in the working directory and send them to their own provider, the same as when you use that CLI yourself. Point them at code you’d share with that provider.</p>
+    </section>
+
+    <section id="install" class="section wrap" aria-labelledby="install-title">
+      <div class="section-head">
+        <h2 id="install-title">Install</h2>
+        <p>You need Node 22 or later on macOS or Linux, and at least one of the <code>claude</code>, <code>codex</code> or <code>grok</code> CLIs, signed in.</p>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <p>Register consult with every agent CLI on your <code>PATH</code>, at user scope:</p>
+          <div class="command" data-copy-wrap>
+            <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest install</code>
+            <button class="copy" type="button" data-copy="npx -y consult-mcp@latest install" hidden>Copy</button>
+          </div>
+        </li>
+        <li>
+          <p>Restart any agent sessions that are already running.</p>
+        </li>
+        <li>
+          <p>Ask for it by name, or let your agent decide:</p>
+          <p class="said">“Get a second opinion from Codex on this migration plan.”</p>
+        </li>
+      </ol>
+
+      <div class="notes">
+        <div>
+          <h3>Updates itself</h3>
+          <p>Each new agent session starts the latest release through npx, so there’s nothing to upgrade by hand.</p>
+        </div>
+        <div>
+          <h3>Removes cleanly</h3>
+          <p><code>npx -y consult-mcp@latest uninstall</code> takes it out of every CLI it was added to.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap" aria-labelledby="cli-title">
+      <div class="section-head">
+        <h2 id="cli-title">Ask from your own terminal</h2>
+        <p>Install it globally with <code>npm i -g consult-mcp</code> and the same advisors answer you directly.</p>
+      </div>
+      <pre class="shell"><code><span class="prompt">$</span> consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe?"
+<span class="prompt">$</span> consult ask codex --resume &lt;session_id&gt; "What would you change first?"
+<span class="prompt">$</span> consult agents</code></pre>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <p>consult is open source under the MIT license. Source on <a href="https://github.com/neelsatyavolu/consult">GitHub</a>, package on <a href="https://www.npmjs.com/package/consult-mcp">npm</a>.</p>
+    <p>Made by <a href="https://n3el.dev">Neel</a>.</p>
+  </footer>
+</body>
+</html>

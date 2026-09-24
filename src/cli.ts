@@ -8,20 +8,22 @@ import { codex } from "./adapters/codex.js";
 import { grok } from "./adapters/grok.js";
 import { listAgents } from "./agents.js";
 import { createConsult } from "./consult.js";
-import { findOnPath, install, serverCommand } from "./install.js";
+import { findOnPath, install, serverCommand, uninstall, type InstallResult } from "./install.js";
 import { run } from "./run.js";
 import { createServer } from "./server.js";
 import { AGENTS, EFFORTS, type AgentName, type Effort } from "./types.js";
+import { VERSION } from "./version.js";
 
 const DEFAULT_TIMEOUT_SEC = 900;
 
-const USAGE = `consult - let coding agents ask each other for advice
+const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
 
   consult serve                          run the MCP server (stdio)
   consult ask <agent> [options] <question...>
       --model <id>  --effort low|medium|high  --resume <session_id>  --cwd <dir>
   consult agents                         list installed CLIs and models
   consult install                        register the MCP server with claude, codex and grok
+  consult uninstall                      remove it from all three
 
 agents: ${AGENTS.join(", ")}    timeout: CONSULT_TIMEOUT_SEC (default ${DEFAULT_TIMEOUT_SEC})`;
 
@@ -46,6 +48,8 @@ async function serve(): Promise<void> {
   });
   const transport = new StdioServerTransport();
   transport.onclose = () => shutdown.abort();
+  // The stdio transport doesn't notice the host closing the pipe, so watch stdin directly.
+  process.stdin.once("end", () => shutdown.abort());
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
     process.once(sig, () => {
       shutdown.abort();
@@ -76,6 +80,16 @@ async function askCommand(argv: readonly string[]): Promise<void> {
   process.stderr.write(`\n[${result.agent}${result.model ? ` ${result.model}` : ""} · session ${result.sessionId} · ${(result.durationMs / 1000).toFixed(1)}s]\n`);
 }
 
+const installedAgents = () => AGENTS.filter((agent) => findOnPath(agent, process.env.PATH ?? ""));
+
+/** Prints one line per CLI and returns whether every step succeeded. */
+function report(results: readonly InstallResult[]): boolean {
+  process.stdout.write(`${results.map((r) => r.message).join("\n")}\n`);
+  const ok = results.every((r) => r.ok);
+  if (!ok) process.exitCode = 1;
+  return ok;
+}
+
 async function main(argv: readonly string[]): Promise<void> {
   const [command, ...rest] = argv;
   switch (command) {
@@ -89,13 +103,18 @@ async function main(argv: readonly string[]): Promise<void> {
     case "install": {
       const script = realpathSync(fileURLToPath(import.meta.url));
       const searchPath = process.env.PATH ?? "";
-      const installed = AGENTS.filter((agent) => findOnPath(agent, searchPath));
-      const results = await install(run, serverCommand(script, searchPath), installed);
-      process.stdout.write(`${results.map((r) => r.message).join("\n")}\n`);
-      if (results.some((r) => !r.ok)) process.exitCode = 1;
-      else process.stdout.write("Restart running agent sessions to pick up the new tool.\n");
+      if (report(await install(run, serverCommand(script, searchPath), installedAgents()))) {
+        process.stdout.write("Restart running agent sessions to pick up the new tools.\n");
+      }
       return;
     }
+    case "uninstall":
+      report(await uninstall(run, installedAgents()));
+      return;
+    case "--version":
+    case "-v":
+      process.stdout.write(`${VERSION}\n`);
+      return;
     default:
       process.stdout.write(`${USAGE}\n`);
       if (command && command !== "help" && command !== "--help") process.exitCode = 1;
