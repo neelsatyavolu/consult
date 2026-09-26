@@ -21,6 +21,18 @@ describe("MCP server", () => {
     expect(tools.map((t) => t.name).sort()).toEqual(["ask_agent", "ask_agents", "list_agents"]);
   });
 
+  it("declares all four behavior hints and an input schema on every tool", async () => {
+    const client = await connect({ ask: vi.fn(), listAgents: vi.fn(), defaultCwd: "/repo" });
+    const { tools } = await client.listTools();
+    const hints = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
+    expect(hints).toEqual({
+      ask_agent: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      ask_agents: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      list_agents: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    });
+    for (const tool of tools) expect(tool.inputSchema.type).toBe("object");
+  });
+
   it("tells the host agent when consulting is worth it", async () => {
     const client = await connect({ ask: vi.fn(), listAgents: vi.fn(), defaultCwd: "/repo" });
     const instructions = client.getInstructions() ?? "";

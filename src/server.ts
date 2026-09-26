@@ -43,7 +43,10 @@ const cwdSchema = z
   .optional()
   .describe("Directory the advisor can read. Defaults to the directory this server was started in");
 
-const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+// Advisors only read files; replies differ between calls and come from the advisor's model provider.
+const ADVISOR_HINTS = { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true } as const;
+
+const errorMessage =(err: unknown) => (err instanceof Error ? err.message : String(err));
 
 function structured(result: AskResult) {
   return {
@@ -98,7 +101,7 @@ export function createServer({
         session_id: z.string().optional().describe("session_id from an earlier reply, to ask a follow-up"),
         cwd: cwdSchema,
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: ADVISOR_HINTS,
     },
     async (args, extra) => {
       try {
@@ -129,7 +132,7 @@ export function createServer({
         effort: effortSchema,
         cwd: cwdSchema,
       },
-      annotations: { readOnlyHint: true, openWorldHint: true },
+      annotations: ADVISOR_HINTS,
     },
     async (args, extra) => {
       const agents = [...new Set(args.agents)];
@@ -160,7 +163,8 @@ export function createServer({
     {
       title: "List agents",
       description: "Show which agent CLIs are installed on this machine, their versions and the models you can pass to ask_agent.",
-      annotations: { readOnlyHint: true },
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async () => {
       const agents = await listAgents();
