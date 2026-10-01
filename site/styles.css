@@ -415,23 +415,42 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-/* One orchestrated moment: the consult plays out once on load. */
+/* Live sessions: Codex asks, and a copy of the Claude session answers on a rule in its own color. */
+.sessions-thread {
+  margin-top: 36px;
+}
+
+.turn-codex-ask .speaker {
+  color: var(--codex);
+}
+
+.turn-claude-reply .speaker {
+  color: var(--claude);
+}
+
+.turn-claude-reply .body {
+  border-left: 2px solid var(--claude);
+  padding-left: 16px;
+  margin-left: -2px;
+}
+
+/* One orchestrated moment: the hero consult plays out once on load. */
 @media (prefers-reduced-motion: no-preference) {
-  .turn {
+  .hero .turn {
     opacity: 0;
     animation: turn-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
   }
 
-  .turn:nth-child(1) { animation-delay: 250ms; }
-  .turn:nth-child(2) { animation-delay: 1250ms; }
-  .turn:nth-child(3) { animation-delay: 3100ms; }
-  .turn:nth-child(4) { animation-delay: 4100ms; }
+  .hero .turn:nth-child(1) { animation-delay: 250ms; }
+  .hero .turn:nth-child(2) { animation-delay: 1250ms; }
+  .hero .turn:nth-child(3) { animation-delay: 3100ms; }
+  .hero .turn:nth-child(4) { animation-delay: 4100ms; }
 
-  .pulse {
+  .hero .pulse {
     animation: pulse 1s ease-in-out 1250ms 2, settle 300ms ease 3100ms forwards;
   }
 
-  .turn-codex .body {
+  .hero .turn-codex .body {
     border-left-color: transparent;
     animation: rule-in 700ms ease 3300ms forwards;
   }
@@ -493,6 +512,10 @@ h2 {
   max-width: 40em;
   color: var(--fg-3);
   font-size: 15px;
+}
+
+.aside code {
+  white-space: nowrap;
 }
 
 /* Tools */
@@ -763,7 +786,8 @@ h3 {
     padding: 12px 16px;
   }
 
-  .turn-codex .body {
+  .turn-codex .body,
+  .turn-claude-reply .body {
     margin-left: 0;
     padding-left: 14px;
   }

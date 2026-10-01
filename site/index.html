@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>consult — a second opinion for your coding agents</title>
-  <meta name="description" content="An open-source MCP server that lets Claude Code, Codex and Grok ask each other for advice through the CLIs you're already signed in to. No API keys.">
+  <meta name="description" content="An open-source MCP server that lets Claude Code, Codex and Grok ask each other for advice through the CLIs you're already signed in to, including the sessions you already have running. No API keys.">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <link rel="canonical" href="https://consult.n3el.dev/">
@@ -38,6 +38,7 @@
     </a>
     <nav class="nav-links" aria-label="Primary">
       <a href="#tools">Tools</a>
+      <a href="#sessions">Live sessions</a>
       <a href="#containment">Safety</a>
       <a href="#install">Install</a>
       <a class="nav-gh" href="https://github.com/neelsatyavolu/consult">
@@ -130,6 +131,73 @@
       </dl>
     </section>
 
+    <section id="sessions" class="section wrap" aria-labelledby="sessions-title">
+      <div class="section-head">
+        <h2 id="sessions-title">Ask the agent that’s already on it</h2>
+        <p>Turn on live sessions and your agents can see the other Claude Code, Codex and Grok sessions you have open, and ask any of them a question. consult forks the session into a read-only copy that knows its whole conversation. The original keeps working and never sees the question.</p>
+        <p>Off until you turn it on.</p>
+      </div>
+
+      <figure class="thread sessions-thread" aria-label="Example: Codex asks a live Claude Code session what it changed">
+        <figcaption class="thread-head">
+          <span>Codex, working in <span class="mono">acme/app</span></span>
+          <span class="thread-model mono">gpt-6-astra</span>
+        </figcaption>
+
+        <ol class="turns">
+          <li class="turn turn-codex-ask">
+            <span class="speaker">codex</span>
+            <div class="body">
+              <p>Every POST to the users endpoint 404s now. The Claude session on <span class="mono">feat/accounts</span> has been changing routes, so I’m asking it instead of guessing.</p>
+              <pre class="call"><code><span class="fn">ask_session</span>
+  session_id <span class="str">"4c1e9a20"</span>
+  question   <span class="str">"Did /v1/users change? The
+             web client's POSTs 404."</span></code></pre>
+            </div>
+          </li>
+
+          <li class="turn turn-claude-reply">
+            <span class="speaker">claude</span>
+            <div class="body">
+              <p>Yes. I renamed it to <span class="mono">/v1/accounts</span> in <span class="mono">api/routes.ts:18</span> an hour ago and kept a redirect for GET only, which is why the POSTs fail.</p>
+              <p>Point the client at <span class="mono">/v1/accounts</span>. The request and response shapes didn’t change.</p>
+              <p class="meta mono">copy of claude session 4c1e9a20 · feat/accounts · 24.1s</p>
+            </div>
+          </li>
+        </ol>
+      </figure>
+
+      <dl class="tools">
+        <div class="tool">
+          <dt><code><span class="fn">list_sessions</span>()</code></dt>
+          <dd>The other live sessions you allow: agent, directory, git branch, title, and when each started and was last active. Nothing else from their conversations.</dd>
+        </div>
+        <div class="tool">
+          <dt><code><span class="fn">ask_session</span>(session_id, question, effort?)</code></dt>
+          <dd>Ask a read-only copy of one. Pass the reply’s <code>session_id</code> and <code>cwd</code> to <code>ask_agent</code> for a follow-up.</dd>
+        </div>
+      </dl>
+
+      <div class="table-scroll" role="region" aria-label="Live session settings" tabindex="0">
+        <table class="flags">
+          <thead>
+            <tr><th scope="col">Setting</th><th scope="col">Who can see and ask whom</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">off</th><td>Nobody. The tools don’t appear. This is the default.</td></tr>
+            <tr><th scope="row">repo</th><td>Sessions in the same git repository, including its worktrees.</td></tr>
+            <tr><th scope="row">machine</th><td>Every consult session you run on this machine.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="command" data-copy-wrap>
+        <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest settings</code>
+        <button class="copy" type="button" data-copy="npx -y consult-mcp@latest settings" hidden>Copy</button>
+      </div>
+      <p class="aside">Install asks whether to turn it on, or pass <code>--sessions=repo</code>. A copy can repeat anything in its session’s conversation to the agent that asked, so choose the scope you’re comfortable with.</p>
+    </section>
+
     <section class="section wrap" aria-labelledby="when-title">
       <div class="section-head">
         <h2 id="when-title">It tells your agent when to ask</h2>
@@ -171,6 +239,7 @@
         </table>
       </div>
       <p class="aside">Advisors read files in the working directory and send them to their own provider, the same as when you use that CLI yourself. Point them at code you’d share with that provider.</p>
+      <p class="aside">Copies of live sessions get the same flags, forked with <code>--resume &lt;id&gt; --fork-session</code> (<code>exec fork</code> for Codex), so the original session’s transcript is only read.</p>
     </section>
 
     <section id="install" class="section wrap" aria-labelledby="install-title">
@@ -181,7 +250,7 @@
 
       <ol class="steps">
         <li>
-          <p>Register consult with every agent CLI on your <code>PATH</code>, at user scope:</p>
+          <p>Register consult with every agent CLI on your <code>PATH</code>, at user scope. In a terminal it also asks whether to turn on <a href="#sessions">live sessions</a>:</p>
           <div class="command" data-copy-wrap>
             <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest install</code>
             <button class="copy" type="button" data-copy="npx -y consult-mcp@latest install" hidden>Copy</button>
@@ -215,7 +284,8 @@
       </div>
       <pre class="shell"><code><span class="prompt">$</span> consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe?"
 <span class="prompt">$</span> consult ask codex --resume &lt;session_id&gt; "What would you change first?"
-<span class="prompt">$</span> consult agents</code></pre>
+<span class="prompt">$</span> consult agents
+<span class="prompt">$</span> consult settings</code></pre>
     </section>
   </main>
 
