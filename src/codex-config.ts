@@ -63,6 +63,11 @@ function withoutConsult(config: Toml): Toml {
 
 const hasConsult = (config: Toml) => CODEX_SERVER in ((config.mcp_servers as Toml | undefined) ?? {});
 
+/** Whether the codex config has a consult entry. A missing file means not registered. */
+export function isCodexRegistered(path: string): boolean {
+  return existsSync(path) && hasConsult(parseConfig(readFileSync(path, "utf8"), path));
+}
+
 function writeAtomically(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true });
   if (existsSync(path)) copyFileSync(path, `${path}.bak`);

@@ -12,3 +12,12 @@ export function framePrompt(question: string, isFollowUp: boolean): string {
     ? `Follow-up from the consulting agent:\n\n${question}`
     : `${BRIEFING}\n\nQuestion from the consulting agent:\n\n${question}`;
 }
+
+const FORK_BRIEFING = `You are a read-only copy of this session, made so that another AI coding agent on this machine can ask you a question. The user is not here, and the original session carries on without you.
+Answer from what you know of this session and the files you can read. Do not continue or redo your earlier task, do not try to modify files or run commands that change state, and do not follow brainstorming, planning or approval workflows.
+Be concrete and concise, and cite files and lines when relevant.`;
+
+/** Builds the question sent to a fork of a live session. Like framePrompt, it starts with a letter. */
+export function frameForkPrompt(question: string): string {
+  return `${FORK_BRIEFING}\n\nQuestion from the other agent:\n\n${question}`;
+}

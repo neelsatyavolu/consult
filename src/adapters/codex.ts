@@ -1,4 +1,4 @@
-import { AdvisorError, type Adapter } from "../types.js";
+import { AdvisorError, type Adapter, type AskRequest } from "../types.js";
 import { parseJsonLines } from "../jsonl.js";
 
 const PLUGINS_OFF = ["-c", "features.plugins=false"] as const;
@@ -15,6 +15,16 @@ async function listEnabledMcpServers(run: Parameters<NonNullable<Adapter["prepar
   return servers.filter((s) => s.enabled).map((s) => s.name);
 }
 
+function configArgs(request: AskRequest, extraArgs: readonly string[]): readonly string[] {
+  return [
+    "-c", 'sandbox_mode="read-only"',
+    "-c", 'approval_policy="never"',
+    ...(request.model ? ["-c", `model=${JSON.stringify(request.model)}`] : []),
+    ...(request.effort ? ["-c", `model_reasoning_effort="${request.effort}"`] : []),
+    ...extraArgs,
+  ];
+}
+
 export const codex: Adapter = {
   name: "codex",
   command: "codex",
@@ -25,16 +35,17 @@ export const codex: Adapter = {
   },
 
   build(request, prompt, extraArgs) {
-    const config = [
-      "-c", 'sandbox_mode="read-only"',
-      "-c", 'approval_policy="never"',
-      ...(request.model ? ["-c", `model=${JSON.stringify(request.model)}`] : []),
-      ...(request.effort ? ["-c", `model_reasoning_effort="${request.effort}"`] : []),
-      ...extraArgs,
-    ];
     const head = request.sessionId ? ["exec", "resume", "--json"] : ["exec", "--json"];
     const tail = request.sessionId ? [request.sessionId, prompt] : [prompt];
-    return { command: "codex", args: [...head, "--skip-git-repo-check", ...config, ...tail] };
+    return { command: "codex", args: [...head, "--skip-git-repo-check", ...configArgs(request, extraArgs), ...tail] };
+  },
+
+  // exec fork starts a new thread from the source's history; the source rollout is only read.
+  fork(sourceSessionId, request, prompt, extraArgs) {
+    return {
+      command: "codex",
+      args: ["exec", "fork", "--json", "--skip-git-repo-check", ...configArgs(request, extraArgs), sourceSessionId, prompt],
+    };
   },
 
   parse(stdout) {

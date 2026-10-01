@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AdvisorError, type Adapter } from "../types.js";
+import { AdvisorError, type Adapter, type AskRequest, type Invocation } from "../types.js";
 
 interface ClaudeResult {
   readonly is_error?: boolean;
@@ -10,26 +10,34 @@ interface ClaudeResult {
 
 // --restricted drops every tool that runs commands or code and confines file tools to the cwd;
 // --strict-mcp-config with no --mcp-config loads no MCP servers, so the advisor cannot call consult back.
+const CONTAINMENT = ["--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config"] as const;
+
+function invocation(request: AskRequest, prompt: string, session: readonly string[]): Invocation {
+  return {
+    command: "claude",
+    args: [
+      "-p",
+      "--output-format", "json",
+      ...CONTAINMENT,
+      ...session,
+      ...(request.model ? ["--model", request.model] : []),
+      ...(request.effort ? ["--effort", request.effort] : []),
+      prompt,
+    ],
+  };
+}
+
 export const claude: Adapter = {
   name: "claude",
   command: "claude",
 
   build(request, prompt) {
-    const session = request.sessionId ? ["--resume", request.sessionId] : ["--session-id", randomUUID()];
-    return {
-      command: "claude",
-      args: [
-        "-p",
-        "--output-format", "json",
-        "--restricted",
-        "--tools", "Read,Grep,Glob",
-        "--strict-mcp-config",
-        ...session,
-        ...(request.model ? ["--model", request.model] : []),
-        ...(request.effort ? ["--effort", request.effort] : []),
-        prompt,
-      ],
-    };
+    return invocation(request, prompt, request.sessionId ? ["--resume", request.sessionId] : ["--session-id", randomUUID()]);
+  },
+
+  // --fork-session copies the source into a new session id, so the live session's transcript is never written.
+  fork(sourceSessionId, request, prompt) {
+    return invocation(request, prompt, ["--resume", sourceSessionId, "--fork-session"]);
   },
 
   parse(stdout) {

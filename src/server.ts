@@ -2,7 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AgentInfo } from "./agents.js";
 import { withProgress } from "./progress.js";
-import { AGENTS, EFFORTS, type AgentName, type AskRequest, type AskResult } from "./types.js";
+import { registerSessionTools, SESSIONS_INSTRUCTIONS, type SessionToolDeps } from "./session-tools.js";
+import { AGENTS, EFFORTS, SESSION_ID_PATTERN, type AgentName, type AskRequest, type AskResult } from "./types.js";
 import { VERSION } from "./version.js";
 
 export interface ServerDeps {
@@ -11,6 +12,8 @@ export interface ServerDeps {
   readonly defaultCwd: string;
   /** How often to send progress notifications during an advisor call. */
   readonly progressIntervalMs?: number;
+  /** Present when live sessions are on: adds list_sessions and ask_session. */
+  readonly sessions?: SessionToolDeps;
 }
 
 const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
@@ -85,8 +88,10 @@ export function createServer({
   listAgents,
   defaultCwd,
   progressIntervalMs = DEFAULT_PROGRESS_INTERVAL_MS,
+  sessions,
 }: ServerDeps): McpServer {
-  const server = new McpServer({ name: "consult", version: VERSION }, { instructions: INSTRUCTIONS });
+  const instructions = sessions ? `${INSTRUCTIONS}\n${SESSIONS_INSTRUCTIONS}` : INSTRUCTIONS;
+  const server = new McpServer({ name: "consult", version: VERSION }, { instructions });
 
   server.registerTool(
     "ask_agent",
@@ -98,7 +103,7 @@ export function createServer({
         question: questionSchema,
         model: z.string().optional().describe("Model for that CLI, e.g. gpt-6-astra, opus, grok-4.7. Omit for the CLI's default; list_agents shows options"),
         effort: effortSchema,
-        session_id: z.string().optional().describe("session_id from an earlier reply, to ask a follow-up"),
+        session_id: z.string().regex(SESSION_ID_PATTERN).optional().describe("session_id from an earlier reply, to ask a follow-up"),
         cwd: cwdSchema,
       },
       annotations: ADVISOR_HINTS,
@@ -172,5 +177,6 @@ export function createServer({
     },
   );
 
+  if (sessions) registerSessionTools(server, sessions, progressIntervalMs);
   return server;
 }

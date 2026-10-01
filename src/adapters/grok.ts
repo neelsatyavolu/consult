@@ -1,28 +1,35 @@
 import { randomUUID } from "node:crypto";
-import { AdvisorError, type Adapter } from "../types.js";
+import { AdvisorError, type Adapter, type AskRequest, type Invocation } from "../types.js";
 import { parseJsonLines } from "../jsonl.js";
 
 // --tools keeps only read-only built-ins, but grok still adds its MCP meta-tools (search_tool/use_tool),
 // which can reach write-capable MCP servers, so those are removed too. Grok's kernel sandbox is not used:
 // it refuses to start on machines where /var/run/docker.sock is a symlink.
+function invocation(request: AskRequest, prompt: string, session: readonly string[]): Invocation {
+  return {
+    command: "grok",
+    args: [
+      "--single", prompt,
+      "--output-format", "streaming-messages-json",
+      "--tools", "read_file,grep,list_dir",
+      "--disallowed-tools", "Agent,search_tool,use_tool",
+      ...session,
+      ...(request.model ? ["--model", request.model] : []),
+      ...(request.effort ? ["--reasoning-effort", request.effort] : []),
+    ],
+  };
+}
+
 export const grok: Adapter = {
   name: "grok",
   command: "grok",
 
   build(request, prompt) {
-    const session = request.sessionId ? ["--resume", request.sessionId] : ["--session-id", randomUUID()];
-    return {
-      command: "grok",
-      args: [
-        "--single", prompt,
-        "--output-format", "streaming-messages-json",
-        "--tools", "read_file,grep,list_dir",
-        "--disallowed-tools", "Agent,search_tool,use_tool",
-        ...session,
-        ...(request.model ? ["--model", request.model] : []),
-        ...(request.effort ? ["--reasoning-effort", request.effort] : []),
-      ],
-    };
+    return invocation(request, prompt, request.sessionId ? ["--resume", request.sessionId] : ["--session-id", randomUUID()]);
+  },
+
+  fork(sourceSessionId, request, prompt) {
+    return invocation(request, prompt, ["--resume", sourceSessionId, "--fork-session"]);
   },
 
   parse(stdout) {

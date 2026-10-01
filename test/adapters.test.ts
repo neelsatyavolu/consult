@@ -71,7 +71,7 @@ describe("codex adapter", () => {
   it("parses the last agent message and thread id", () => {
     expect(codex.parse(fixture("codex.jsonl"))).toEqual({
       answer: "pineapple",
-      sessionId: "01a0ccd8-7e85-72e2-9287-a11b48b9ef62",
+      sessionId: "22222222-3333-7444-8555-666666666666",
     });
   });
 
@@ -142,5 +142,42 @@ describe("grok adapter", () => {
   it("throws when the result is an error", () => {
     const out = JSON.stringify({ type: "result", is_error: true, result: "auth expired", session_id: "s" });
     expect(() => grok.parse(out)).toThrow(/auth expired/);
+  });
+});
+
+describe("forking a live session", () => {
+  const request: AskRequest = { agent: "claude", question: "q", cwd: "/repo", effort: "low" };
+
+  it("claude resumes the source with --fork-session and the same containment", () => {
+    const inv = claude.fork("SRC", request, "PROMPT", []);
+    expect(valueAfter(inv.args, "--resume")).toBe("SRC");
+    expect(inv.args).toContain("--fork-session");
+    expect(inv.args).toContain("--restricted");
+    expect(inv.args).toContain("--strict-mcp-config");
+    expect(valueAfter(inv.args, "--tools")).toBe("Read,Grep,Glob");
+    expect(valueAfter(inv.args, "--effort")).toBe("low");
+    expect(inv.args).not.toContain("--session-id");
+    expect(inv.args.at(-1)).toBe("PROMPT");
+  });
+
+  it("codex uses exec fork with the read-only sandbox and the MCP switches from prepare", () => {
+    const inv = codex.fork("SRC", { ...request, agent: "codex" }, "PROMPT", ["-c", "mcp_servers.x.enabled=false"]);
+    expect(inv.command).toBe("codex");
+    expect(inv.args.slice(0, 3)).toEqual(["exec", "fork", "--json"]);
+    expect(inv.args).toContain('sandbox_mode="read-only"');
+    expect(inv.args).toContain('approval_policy="never"');
+    expect(inv.args).toContain("mcp_servers.x.enabled=false");
+    expect(inv.args).toContain('model_reasoning_effort="low"');
+    expect(inv.args.slice(-2)).toEqual(["SRC", "PROMPT"]);
+  });
+
+  it("grok resumes the source with --fork-session and only read-only tools", () => {
+    const inv = grok.fork("SRC", { ...request, agent: "grok" }, "PROMPT", []);
+    expect(valueAfter(inv.args, "--single")).toBe("PROMPT");
+    expect(valueAfter(inv.args, "--resume")).toBe("SRC");
+    expect(inv.args).toContain("--fork-session");
+    expect(valueAfter(inv.args, "--tools")).toBe("read_file,grep,list_dir");
+    expect(valueAfter(inv.args, "--disallowed-tools")).toBe("Agent,search_tool,use_tool");
+    expect(inv.args).not.toContain("--session-id");
   });
 });

@@ -8,10 +8,15 @@ import { codex } from "./adapters/codex.js";
 import { grok } from "./adapters/grok.js";
 import { listAgents } from "./agents.js";
 import { createConsult } from "./consult.js";
-import { findOnPath, install, serverCommand, uninstall, type InstallResult } from "./install.js";
+import { findOnPath, install, isRegistered, serverCommand, uninstall, type InstallResult } from "./install.js";
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, sessionsMode, settingsPath, withSessionsMode, type SessionsMode } from "./settings.js";
 import { run } from "./run.js";
 import { createServer } from "./server.js";
-import { AGENTS, EFFORTS, type AgentName, type Effort } from "./types.js";
+import { listLive, registryDir } from "./sessions/registry.js";
+import { assertNotLiveSession } from "./sessions/service.js";
+import { sessionTools } from "./sessions/wire.js";
+import { chooseInstallMode, isInteractive, parseSessionsFlag, promptSessionsMode, runSettings } from "./tui.js";
+import { AGENTS, EFFORTS, SESSION_ID_PATTERN, type AgentName, type Effort } from "./types.js";
 import { VERSION } from "./version.js";
 
 const DEFAULT_TIMEOUT_SEC = 900;
@@ -22,8 +27,10 @@ const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
   consult ask <agent> [options] <question...>
       --model <id>  --effort low|medium|high  --resume <session_id>  --cwd <dir>
   consult agents                         list installed CLIs and models
-  consult install                        register the MCP server with claude, codex and grok
+  consult install [--sessions off|repo|machine]
+                                         register the MCP server with claude, codex and grok
   consult uninstall                      remove it from all three
+  consult settings                       live sessions, and which agents use consult (interactive)
 
 agents: ${AGENTS.join(", ")}    timeout: CONSULT_TIMEOUT_SEC (default ${DEFAULT_TIMEOUT_SEC})`;
 
@@ -34,17 +41,36 @@ function timeoutMs(): number {
   return sec * 1000;
 }
 
+/** Resuming a live session in place would write its transcript; those are reachable only through ask_session. */
+const refuseLive = (sessionId: string | undefined): void => {
+  if (sessionId) assertNotLiveSession(sessionId, listLive(registryDir()));
+};
+
 const consult = () => createConsult({ run, adapters: { claude, codex, grok }, timeoutMs: timeoutMs() });
 
 // Advisors run in their own process groups, so they would outlive the server. Stop them when the host
 // disconnects or signals us.
 async function serve(): Promise<void> {
   const shutdown = new AbortController();
-  const { ask } = consult();
+  const withShutdown = (signal?: AbortSignal) => (signal ? AbortSignal.any([signal, shutdown.signal]) : shutdown.signal);
+  const { ask, askSession } = consult();
+  const sessions = await sessionTools({
+    run,
+    env: process.env,
+    cwd: process.cwd(),
+    pid: process.pid,
+    signal: shutdown.signal,
+    askFork: (target, question, effort, signal) => askSession(target, question, effort, withShutdown(signal)),
+    warn: (message) => process.stderr.write(`consult: ${message}\n`),
+  });
   const server = createServer({
-    ask: (request, signal) => ask(request, signal ? AbortSignal.any([signal, shutdown.signal]) : shutdown.signal),
+    ask: (request, signal) => {
+      refuseLive(request.sessionId);
+      return ask(request, withShutdown(signal));
+    },
     listAgents: () => listAgents(run),
     defaultCwd: process.cwd(),
+    ...(sessions ? { sessions } : {}),
   });
   const transport = new StdioServerTransport();
   transport.onclose = () => shutdown.abort();
@@ -68,6 +94,10 @@ async function askCommand(argv: readonly string[]): Promise<void> {
   const [agent, ...words] = positionals;
   if (!AGENTS.includes(agent as AgentName)) throw new Error(`agent must be one of ${AGENTS.join(", ")}`);
   if (values.effort && !EFFORTS.includes(values.effort as Effort)) throw new Error(`effort must be one of ${EFFORTS.join(", ")}`);
+  if (values.resume !== undefined && !SESSION_ID_PATTERN.test(values.resume)) {
+    throw new Error("--resume must be a session id: letters, digits and hyphens, not starting with a hyphen");
+  }
+  refuseLive(values.resume);
   const result = await consult().ask({
     agent: agent as AgentName,
     question: words.join(" "),
@@ -81,6 +111,27 @@ async function askCommand(argv: readonly string[]): Promise<void> {
 }
 
 const installedAgents = () => AGENTS.filter((agent) => findOnPath(agent, process.env.PATH ?? ""));
+
+const scriptPath = () => realpathSync(fileURLToPath(import.meta.url));
+const searchPath = () => process.env.PATH ?? "";
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Applies --sessions, or asks in a terminal. With neither, the setting stays as it is. */
+async function configureSessions(flag: SessionsMode | undefined): Promise<void> {
+  const path = settingsPath();
+  let current = DEFAULT_SETTINGS;
+  try {
+    current = loadSettings(path);
+  } catch (err) {
+    if (!flag) {
+      process.stderr.write(`consult: ${errorMessage(err)}\n`);
+      return;
+    }
+  }
+  const mode = await chooseInstallMode({ flag, current: sessionsMode(current), interactive: isInteractive(), prompt: promptSessionsMode });
+  if (mode !== undefined) saveSettings(path, withSessionsMode(current, mode));
+  process.stdout.write(`Live sessions: ${mode ?? sessionsMode(current)} (change with \`consult settings\`)\n`);
+}
 
 /** Prints one line per CLI and returns whether every step succeeded. */
 function report(results: readonly InstallResult[]): boolean {
@@ -101,11 +152,30 @@ async function main(argv: readonly string[]): Promise<void> {
       process.stdout.write(`${JSON.stringify(await listAgents(run), null, 2)}\n`);
       return;
     case "install": {
-      const script = realpathSync(fileURLToPath(import.meta.url));
-      const searchPath = process.env.PATH ?? "";
-      if (report(await install(run, serverCommand(script, searchPath), installedAgents()))) {
+      const { values } = parseArgs({ args: [...rest], options: { sessions: { type: "string" } } });
+      const flag = parseSessionsFlag(values.sessions);
+      if (report(await install(run, serverCommand(scriptPath(), searchPath()), installedAgents()))) {
+        await configureSessions(flag);
         process.stdout.write("Restart running agent sessions to pick up the new tools.\n");
+      } else if (flag) {
+        process.stderr.write("consult: live sessions setting left unchanged because registration failed\n");
       }
+      return;
+    }
+    case "settings": {
+      if (!isInteractive()) {
+        throw new Error("consult settings needs an interactive terminal; in scripts use `consult install --sessions=off|repo|machine`");
+      }
+      const cmd = serverCommand(scriptPath(), searchPath());
+      const path = settingsPath();
+      await runSettings({
+        load: () => loadSettings(path),
+        save: (settings) => saveSettings(path, settings),
+        installed: installedAgents(),
+        isRegistered: (agent) => isRegistered(run, agent),
+        register: (agents) => install(run, cmd, agents),
+        unregister: (agents) => uninstall(run, agents),
+      });
       return;
     }
     case "uninstall":

@@ -1,7 +1,7 @@
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { codexConfigPath, editConfig } from "./codex-config.js";
+import { codexConfigPath, editConfig, isCodexRegistered } from "./codex-config.js";
 import { AGENTS, type AgentName, type Runner } from "./types.js";
 
 const SYSTEM_PATH = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -13,7 +13,7 @@ export const CODEX_TOOL_TIMEOUT_SEC = 960;
 /** Codex's default 10s startup timeout is too short for npx fetching a new release. */
 export const CODEX_STARTUP_TIMEOUT_SEC = 60;
 
-export { codexConfigPath, removeTomlTable } from "./codex-config.js";
+export { codexConfigPath, isCodexRegistered, removeTomlTable } from "./codex-config.js";
 
 // Package-runner caches that get cleaned up, so a host must never be pointed at a script inside one.
 const NPX_CACHE = /[\\/]_npx[\\/]/;
@@ -102,6 +102,22 @@ async function registerWithCli(run: Runner, agent: "claude" | "grok", cmd: Serve
 async function unregisterFromCli(run: Runner, agent: "claude" | "grok"): Promise<string> {
   const res = await run(agent, ["mcp", "remove", SERVER_NAME, "-s", "user"], CLI_OPTS);
   return res.code === 0 ? `${agent}: removed` : `${agent}: not registered (${res.stderr.trim()})`;
+}
+
+const GROK_ENTRY = new RegExp(`^\\s*${SERVER_NAME}:`, "m");
+
+/** Whether consult is currently registered with this CLI. */
+export async function isRegistered(run: Runner, agent: AgentName, codexPath: string = codexConfigPath()): Promise<boolean> {
+  switch (agent) {
+    case "claude":
+      return (await run("claude", ["mcp", "get", SERVER_NAME], CLI_OPTS)).code === 0;
+    case "grok": {
+      const res = await run("grok", ["mcp", "list"], CLI_OPTS);
+      return res.code === 0 && GROK_ENTRY.test(res.stdout);
+    }
+    case "codex":
+      return isCodexRegistered(codexPath);
+  }
 }
 
 export interface InstallResult {

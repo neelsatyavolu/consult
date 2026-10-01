@@ -1,6 +1,16 @@
 import { statSync } from "node:fs";
-import { framePrompt } from "./prompt.js";
-import { AdvisorError, type AgentName, type Adapter, type AskRequest, type AskResult, type Runner, type StopReason } from "./types.js";
+import { frameForkPrompt, framePrompt } from "./prompt.js";
+import {
+  AdvisorError,
+  type Adapter,
+  type AgentName,
+  type AskRequest,
+  type AskResult,
+  type Effort,
+  type Invocation,
+  type Runner,
+  type StopReason,
+} from "./types.js";
 
 export interface ConsultDeps {
   readonly run: Runner;
@@ -32,14 +42,25 @@ function stoppedMessage(agent: AgentName, reason: StopReason, timeoutMs: number)
   }
 }
 
+/** A live session to fork: the CLI that owns it, its id, and the directory it runs in. */
+export interface ForkTarget {
+  readonly agent: AgentName;
+  readonly sessionId: string;
+  readonly cwd: string;
+}
+
 export function createConsult({ run, adapters, timeoutMs }: ConsultDeps) {
-  async function ask(request: AskRequest, signal?: AbortSignal): Promise<AskResult> {
+  async function execute(
+    adapter: Adapter,
+    request: AskRequest,
+    invoke: (extraArgs: readonly string[]) => Invocation,
+    signal?: AbortSignal,
+  ): Promise<AskResult> {
     validate(request);
-    const adapter = adapters[request.agent];
     const started = Date.now();
     // Computed per call, never cached: containment must reflect the config as it is right now.
     const extraArgs = adapter.prepare ? await adapter.prepare(run, request.cwd, signal) : [];
-    const invocation = adapter.build(request, framePrompt(request.question, Boolean(request.sessionId)), extraArgs);
+    const invocation = invoke(extraArgs);
     const res = await run(invocation.command, invocation.args, { cwd: request.cwd, timeoutMs, signal });
 
     if (res.stopped) throw new AdvisorError(stoppedMessage(adapter.name, res.stopped, timeoutMs));
@@ -50,5 +71,18 @@ export function createConsult({ run, adapters, timeoutMs }: ConsultDeps) {
     return { agent: adapter.name, ...adapter.parse(res.stdout), durationMs: Date.now() - started };
   }
 
-  return { ask };
+  async function ask(request: AskRequest, signal?: AbortSignal): Promise<AskResult> {
+    const adapter = adapters[request.agent];
+    const prompt = framePrompt(request.question, Boolean(request.sessionId));
+    return execute(adapter, request, (extra) => adapter.build(request, prompt, extra), signal);
+  }
+
+  /** Asks a read-only fork of a live session. It runs in that session's directory, where its CLI can find it. */
+  async function askSession(target: ForkTarget, question: string, effort?: Effort, signal?: AbortSignal): Promise<AskResult> {
+    const adapter = adapters[target.agent];
+    const request: AskRequest = { agent: target.agent, question, cwd: target.cwd, ...(effort ? { effort } : {}) };
+    return execute(adapter, request, (extra) => adapter.fork(target.sessionId, request, frameForkPrompt(question), extra), signal);
+  }
+
+  return { ask, askSession };
 }

@@ -7,6 +7,7 @@ import {
   codexTomlBlock,
   findOnPath,
   install,
+  isRegistered,
   registerCodex,
   removeTomlTable,
   serverCommand,
@@ -238,5 +239,32 @@ describe("serverCommand", () => {
 
   it("fails clearly when node is not on PATH", () => {
     expect(() => serverCommand("/x/cli.js", binDir(["claude"]))).toThrow(/node not found/);
+  });
+});
+
+describe("isRegistered", () => {
+  it("asks claude and grok, and reads codex's config", async () => {
+    const run = vi.fn<Runner>(async (cmd) =>
+      cmd === "claude"
+        ? { stdout: "", stderr: "", code: 0 }
+        : { stdout: "  github: https://x\n  consult: /bin/npx -y consult-mcp@latest serve\n", stderr: "", code: 0 },
+    );
+    expect(await isRegistered(run, "claude")).toBe(true);
+    expect(run).toHaveBeenCalledWith("claude", ["mcp", "get", "consult"], expect.anything());
+    expect(await isRegistered(run, "grok")).toBe(true);
+    const config = tmpConfig();
+    expect(await isRegistered(run, "codex", config)).toBe(false);
+    registerCodex(local, config);
+    expect(await isRegistered(run, "codex", config)).toBe(true);
+  });
+
+  it("is false when claude has no consult server or grok lists only similar names", async () => {
+    const run = vi.fn<Runner>(async (cmd) =>
+      cmd === "claude"
+        ? { stdout: "", stderr: "No MCP server found", code: 1 }
+        : { stdout: "  consult-old: /bin/x\n  my-consult: /bin/y\n", stderr: "", code: 0 },
+    );
+    expect(await isRegistered(run, "claude")).toBe(false);
+    expect(await isRegistered(run, "grok")).toBe(false);
   });
 });

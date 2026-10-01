@@ -1,6 +1,9 @@
 export const AGENTS = ["claude", "codex", "grok"] as const;
 export type AgentName = (typeof AGENTS)[number];
 
+/** Session ids reach CLI argv after `--resume`; a leading `-` could be parsed as a flag. */
+export const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type Effort = (typeof EFFORTS)[number];
 
@@ -60,6 +63,8 @@ export interface Adapter {
   /** Computes extra args once per server process (e.g. which MCP servers to switch off). */
   prepare?(run: Runner, cwd: string, signal?: AbortSignal): Promise<readonly string[]>;
   build(request: AskRequest, prompt: string, extraArgs: readonly string[]): Invocation;
+  /** Like build, but in a new session forked from `sourceSessionId`. The source session is only read. */
+  fork(sourceSessionId: string, request: AskRequest, prompt: string, extraArgs: readonly string[]): Invocation;
   /** Throws when the output holds an error or no answer. */
   parse(stdout: string): Reply;
 }

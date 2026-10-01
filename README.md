@@ -52,6 +52,8 @@ To pin to a specific build instead of following `@latest`, install globally with
 
 **`list_agents`** shows the installed CLIs, their versions and the model IDs each account can use.
 
+**`list_sessions`** and **`ask_session`** `{session_id, question, effort?}` appear when [live sessions](#live-sessions) are on.
+
 While an advisor is working, the server sends MCP progress notifications (`codex is thinking (40s)`), so hosts that show progress don't look stuck.
 
 ## When agents consult
@@ -65,6 +67,34 @@ The server's MCP instructions, which hosts add to the agent's context, tell it t
 
 The instructions also tell it to prefer an advisor from a different vendor, to write self-contained questions (the advisor can read the repo but not the conversation), and to check advice against the code before acting on it.
 
+## Live sessions
+
+Off by default. When on, agents can ask the agent sessions you already have running, not only fresh advisors. For example, the Codex session working on your API can ask the Claude Code session that wrote the client what it changed.
+
+- **`list_sessions`** lists other live sessions: agent, session id, directory, git branch, title, and when each started and was last active. Nothing else from their conversations.
+- **`ask_session`** `{session_id, question, effort?}` asks a read-only **copy** of that session. consult forks it (`claude --resume <id> --fork-session`, `codex exec fork <id>`, `grok --resume <id> --fork-session`) with the same containment as any advisor. The copy knows everything the session has seen, while the session itself is not interrupted and never sees the question. Pass the reply's `session_id` and `cwd` to `ask_agent` for follow-ups.
+
+Turn it on when you install, or later:
+
+```bash
+npx -y consult-mcp@latest install --sessions=repo   # or off, machine; without the flag, install asks when run in a terminal
+npx -y consult-mcp@latest settings                  # interactive: live sessions, and which agents use consult
+```
+
+| Setting | Who can see and ask whom |
+| --- | --- |
+| `off` (default) | Nobody. The tools don't appear. |
+| `repo` | Sessions in the same git repository, including its worktrees (outside git: the same directory) |
+| `machine` | Every consult session you run on this machine |
+
+Settings are stored in `$XDG_CONFIG_HOME/consult/settings.json` (default `~/.config/consult/`). Running sessions register in `$XDG_STATE_HOME/consult/sessions/` (default `~/.local/state/consult/`), and only you can read those files. Turning sessions on takes effect in new agent sessions; turning them off, or changing the scope, applies immediately.
+
+| CLI | How consult finds the session |
+| --- | --- |
+| claude | `CLAUDE_CODE_SESSION_ID`. After `/clear`, the entry still points at the earlier conversation until the session restarts. |
+| codex | the `rollout-*.jsonl` file the codex process holds open, from the session's first turn on |
+| grok | the `~/.grok/sessions/<cwd>/<session id>/events.jsonl` file the interactive grok process holds open, from the session's first turn on; not identified if several sessions are open |
+
 ## How advisors are contained
 
 Every advisor runs headless and read-only, and has no MCP servers. So an advisor can't call consult again, which prevents loops.
@@ -74,6 +104,8 @@ Every advisor runs headless and read-only, and has no MCP servers. So an advisor
 | claude | `-p --restricted --tools Read,Grep,Glob --strict-mcp-config` |
 | codex | `exec`, `sandbox_mode="read-only"`, `approval_policy="never"`, plugins off, and every enabled MCP server disabled by name (Codex runs MCP tools outside its sandbox) |
 | grok | `--tools read_file,grep,list_dir --disallowed-tools Agent,search_tool,use_tool` (the MCP helper tools can reach servers that write files) |
+
+`ask_session` copies use the same flags, plus `--resume <id> --fork-session` (claude, grok) or `exec fork <id>` (codex), so the live session's own transcript is only read.
 
 consult doesn't use Grok's kernel sandbox (`--sandbox read-only`), because it refuses to start on machines where `/var/run/docker.sock` is a symlink, as it often is on Macs with Docker installed.
 
@@ -89,6 +121,7 @@ The same calls are available from the shell, which is handy for debugging:
 consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe under concurrent calls?"
 consult ask codex --resume <session_id> "What would you change first?"
 consult agents
+consult settings                      # live sessions, and which agents use consult
 ```
 
 Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. `CONSULT_TIMEOUT_SEC` (default 900) caps each advisor call.

@@ -54,6 +54,16 @@ describe("MCP server", () => {
     expect(text(res)).toContain("session_id: t1");
   });
 
+  it("rejects a session_id that a CLI could parse as a flag, without asking", async () => {
+    const ask = vi.fn();
+    const client = await connect({ ask, listAgents: vi.fn(), defaultCwd: "/repo" });
+    for (const session_id of ["--last", "--dangerously-bypass-approvals-and-sandbox", "-x"]) {
+      const res = await client.callTool({ name: "ask_agent", arguments: { agent: "codex", question: "q", session_id } });
+      expect(res.isError).toBe(true);
+    }
+    expect(ask).not.toHaveBeenCalled();
+  });
+
   it("passes session_id and cwd through for follow-ups", async () => {
     const ask = vi.fn(async () => ({ agent: "grok" as const, answer: "a", sessionId: "s", model: "grok-4.7", durationMs: 1 }));
     const client = await connect({ ask, listAgents: vi.fn(), defaultCwd: "/repo" });
