@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   currentSession,
@@ -12,7 +15,14 @@ const ID = "11111111-2222-7333-8444-555555555555";
 const LATER = "11111111-3333-7333-8444-555555555555";
 
 function deps(overrides: Partial<IdentityDeps> = {}): IdentityDeps {
-  return { env: {}, ancestors: async () => [], openFiles: async () => [], claudeTranscript: () => undefined, ...overrides };
+  return {
+    env: {},
+    ancestors: async () => [],
+    openFiles: async () => [],
+    claudeSessionOf: () => undefined,
+    claudeTranscript: () => undefined,
+    ...overrides,
+  };
 }
 const chain = (...names: string[]): readonly ProcessInfo[] => names.map((name, i) => ({ pid: 100 + i, name }));
 
@@ -43,6 +53,23 @@ describe("currentSession", () => {
       sessionId: ID,
       transcriptPath: `/home/u/.claude/projects/p/${ID}.jsonl`,
     });
+  });
+
+  it("follows the conversation claude's process record points at after /resume, not the stale env var", async () => {
+    const d = deps({
+      env: { CLAUDE_CODE_SESSION_ID: ID },
+      claudeSessionOf: (pid) => (pid === 4242 ? LATER : undefined),
+      claudeTranscript: (id) => (id === LATER ? `/home/u/.claude/projects/p/${id}.jsonl` : undefined),
+    });
+    expect(await currentSession({ agent: "claude", pid: 4242 }, d)).toEqual({
+      sessionId: LATER,
+      transcriptPath: `/home/u/.claude/projects/p/${LATER}.jsonl`,
+    });
+  });
+
+  it("does not report a claude session whose conversation is not saved yet, since it cannot be forked", async () => {
+    const d = deps({ env: { CLAUDE_CODE_SESSION_ID: ID }, claudeTranscript: () => undefined });
+    expect(await currentSession({ agent: "claude", pid: 4242 }, d)).toBeUndefined();
   });
 
   it("rejects a claude session id that starts with a hyphen", async () => {
@@ -128,5 +155,20 @@ describe("systemIdentityDeps", () => {
     }));
     expect(await systemIdentityDeps(run, {}, "darwin").openFiles(40)).toEqual(["/home/u/repo", "/home/u/.codex/sessions/r.jsonl"]);
     expect(run).toHaveBeenCalledWith("lsof", ["-p", "40", "-Fn"], expect.anything());
+  });
+
+  it("reads the session a claude process is on from Claude Code's per-process record", () => {
+    const dir = mkdtempSync(join(tmpdir(), "consult-claude-"));
+    mkdirSync(join(dir, "sessions"));
+    writeFileSync(join(dir, "sessions", "4242.json"), JSON.stringify({ pid: 4242, sessionId: LATER, cwd: "/home/u/repo" }));
+    writeFileSync(join(dir, "sessions", "5151.json"), JSON.stringify({ pid: 9999, sessionId: LATER }));
+    writeFileSync(join(dir, "sessions", "6161.json"), JSON.stringify({ pid: 6161, sessionId: "--last" }));
+    writeFileSync(join(dir, "sessions", "7171.json"), "{ half-writ");
+    const { claudeSessionOf } = systemIdentityDeps(vi.fn<Runner>(), { CLAUDE_CONFIG_DIR: dir }, "darwin");
+    expect(claudeSessionOf(4242)).toBe(LATER);
+    expect(claudeSessionOf(5151)).toBeUndefined();
+    expect(claudeSessionOf(6161)).toBeUndefined();
+    expect(claudeSessionOf(7171)).toBeUndefined();
+    expect(claudeSessionOf(8181)).toBeUndefined();
   });
 });

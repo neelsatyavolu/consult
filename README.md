@@ -91,7 +91,7 @@ Settings are stored in `$XDG_CONFIG_HOME/consult/settings.json` (default `~/.con
 
 | CLI | How consult finds the session |
 | --- | --- |
-| claude | `CLAUDE_CODE_SESSION_ID`. After `/clear`, the entry still points at the earlier conversation until the session restarts. |
+| claude | the record Claude Code keeps for each running process (`~/.claude/sessions/<pid>.json`), so it follows `/resume` and `/clear`; `CLAUDE_CODE_SESSION_ID` as a fallback. Listed once the conversation is saved, after its first message |
 | codex | the `rollout-*.jsonl` file the codex process holds open, from the session's first turn on |
 | grok | the `~/.grok/sessions/<cwd>/<session id>/events.jsonl` file the interactive grok process holds open, from the session's first turn on; not identified if several sessions are open |
 

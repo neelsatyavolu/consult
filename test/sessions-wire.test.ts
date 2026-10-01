@@ -12,7 +12,9 @@ const claudeIn = (sessionId: string): IdentityDeps => ({
   env: { CLAUDE_CODE_SESSION_ID: sessionId },
   ancestors: async () => [{ pid: 2, name: "claude" }],
   openFiles: async () => [],
-  claudeTranscript: () => undefined,
+  claudeSessionOf: () => undefined,
+  // Only sessions with a saved conversation are listed.
+  claudeTranscript: (id) => `/home/u/.claude/projects/p/${id}.jsonl`,
 });
 
 function setup(mode: SessionsMode | "corrupt" | "missing") {

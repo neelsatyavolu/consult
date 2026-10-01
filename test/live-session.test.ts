@@ -14,6 +14,7 @@ const codexHost = (files: () => readonly string[]): IdentityDeps => ({
   env: {},
   ancestors: async () => [{ pid: 77, name: "codex" }],
   openFiles: async () => files(),
+  claudeSessionOf: () => undefined,
   claudeTranscript: () => undefined,
 });
 
@@ -69,7 +70,13 @@ describe("startLiveSession", () => {
 
   it("does not register when no agent CLI started the server", async () => {
     const stop = new AbortController();
-    const identity: IdentityDeps = { env: {}, ancestors: async () => [{ pid: 9, name: "zsh" }], openFiles: async () => [], claudeTranscript: () => undefined };
+    const identity: IdentityDeps = {
+      env: {},
+      ancestors: async () => [{ pid: 9, name: "zsh" }],
+      openFiles: async () => [],
+      claudeSessionOf: () => undefined,
+      claudeTranscript: () => undefined,
+    };
     const opts = options(4244, identity, stop.signal);
     const live = await startLiveSession(opts);
     expect(existsSync(join(opts.dir, "4244.json"))).toBe(false);

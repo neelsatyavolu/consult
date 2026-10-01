@@ -1,6 +1,6 @@
 // Opt-in: talks to the real CLIs over the built MCP server. Run with `npm run build && npm run test:live`.
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -125,17 +125,23 @@ describe.skipIf(!live)("live sessions over MCP", () => {
     const source = claude.parse(started.stdout).sessionId;
     const env = { ...process.env, XDG_CONFIG_HOME: join(dir, ".config"), XDG_STATE_HOME: join(dir, ".state") } as Record<string, string>;
     saveSettings(settingsPath(env), withSessionsMode(DEFAULT_SETTINGS, "repo"));
-    const serve = (sessionId: string) =>
+    // The owner stands in for a live claude session through its env var. Run inside Claude Code, its nearest claude
+    // ancestor is the outer session, whose process record would win, so it gets a config dir with the real
+    // transcripts but no process records.
+    const ownerConfig = join(dir, ".claude-owner");
+    mkdirSync(ownerConfig);
+    symlinkSync(join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects"), join(ownerConfig, "projects"));
+    const serve = (sessionId: string, extraEnv: Record<string, string> = {}) =>
       new StdioClientTransport({
         command: process.execPath,
         args: [join(root, "dist", "cli.js"), "serve"],
         cwd: dir,
-        env: { ...env, CLAUDE_CODE_SESSION_ID: sessionId },
+        env: { ...env, CLAUDE_CODE_SESSION_ID: sessionId, ...extraEnv },
       });
 
     const owner = new Client({ name: "owner", version: "0" });
     const asker = new Client({ name: "asker", version: "0" });
-    await owner.connect(serve(source));
+    await owner.connect(serve(source, { CLAUDE_CONFIG_DIR: ownerConfig }));
     await asker.connect(serve(randomUUID()));
     try {
       const listed = await asker.callTool({ name: "list_sessions", arguments: {} });
