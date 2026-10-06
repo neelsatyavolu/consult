@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { claude } from "./adapters/claude.js";
-import { codex } from "./adapters/codex.js";
-import { grok } from "./adapters/grok.js";
+import { codex, codexWorker } from "./adapters/codex.js";
+import { grok, grokWorker } from "./adapters/grok.js";
 import { listAgents } from "./agents.js";
 import { createConsult } from "./consult.js";
 import { findOnPath, install, isRegistered, serverCommand, uninstall, type InstallResult } from "./install.js";
@@ -15,11 +15,13 @@ import { createServer } from "./server.js";
 import { listLive, registryDir } from "./sessions/registry.js";
 import { assertNotLiveSession } from "./sessions/service.js";
 import { sessionTools } from "./sessions/wire.js";
+import { createTaskManager } from "./tasks.js";
 import { chooseInstallMode, isInteractive, parseSessionsFlag, promptSessionsMode, runSettings } from "./tui.js";
 import { AGENTS, EFFORTS, SESSION_ID_PATTERN, type AgentName, type Effort } from "./types.js";
 import { VERSION } from "./version.js";
 
 const DEFAULT_TIMEOUT_SEC = 900;
+const DEFAULT_TASK_TIMEOUT_SEC = 3600;
 
 const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
 
@@ -30,15 +32,27 @@ const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
   consult install [--sessions off|repo|machine]
                                          register the MCP server with claude, codex and grok
   consult uninstall                      remove it from all three
-  consult settings                       live sessions, and which agents use consult (interactive)
+  consult settings                       live sessions, task dispatch, and which agents use consult (interactive)
 
-agents: ${AGENTS.join(", ")}    timeout: CONSULT_TIMEOUT_SEC (default ${DEFAULT_TIMEOUT_SEC})`;
+agents: ${AGENTS.join(", ")}
+timeouts: CONSULT_TIMEOUT_SEC per advisor call (default ${DEFAULT_TIMEOUT_SEC}), CONSULT_TASK_TIMEOUT_SEC per task (default ${DEFAULT_TASK_TIMEOUT_SEC})`;
 
-function timeoutMs(): number {
-  const raw = process.env.CONSULT_TIMEOUT_SEC;
-  const sec = raw ? Number(raw) : DEFAULT_TIMEOUT_SEC;
-  if (!Number.isFinite(sec) || sec <= 0) throw new Error(`CONSULT_TIMEOUT_SEC must be a positive number, got ${raw}`);
+function secondsFromEnv(name: string, defaultSec: number): number {
+  const raw = process.env[name];
+  const sec = raw ? Number(raw) : defaultSec;
+  if (!Number.isFinite(sec) || sec <= 0) throw new Error(`${name} must be a positive number, got ${raw}`);
   return sec * 1000;
+}
+
+const timeoutMs = () => secondsFromEnv("CONSULT_TIMEOUT_SEC", DEFAULT_TIMEOUT_SEC);
+
+/** Invalid settings mean off; sessionTools already warns about them. */
+function tasksEnabled(): boolean {
+  try {
+    return loadSettings(settingsPath()).tasks.enabled;
+  } catch {
+    return false;
+  }
 }
 
 /** Resuming a live session in place would write its transcript; those are reachable only through ask_session. */
@@ -48,7 +62,7 @@ const refuseLive = (sessionId: string | undefined): void => {
 
 const consult = () => createConsult({ run, adapters: { claude, codex, grok }, timeoutMs: timeoutMs() });
 
-// Advisors run in their own process groups, so they would outlive the server. Stop them when the host
+// Advisors and workers run in their own process groups, so they would outlive the server. Stop them when the host
 // disconnects or signals us.
 async function serve(): Promise<void> {
   const shutdown = new AbortController();
@@ -63,6 +77,14 @@ async function serve(): Promise<void> {
     askFork: (target, question, effort, signal) => askSession(target, question, effort, withShutdown(signal)),
     warn: (message) => process.stderr.write(`consult: ${message}\n`),
   });
+  const tasks = tasksEnabled()
+    ? createTaskManager({
+        run,
+        workers: { codex: codexWorker, grok: grokWorker },
+        timeoutMs: secondsFromEnv("CONSULT_TASK_TIMEOUT_SEC", DEFAULT_TASK_TIMEOUT_SEC),
+        signal: shutdown.signal,
+      })
+    : undefined;
   const server = createServer({
     ask: (request, signal) => {
       refuseLive(request.sessionId);
@@ -71,6 +93,7 @@ async function serve(): Promise<void> {
     listAgents: () => listAgents(run),
     defaultCwd: process.cwd(),
     ...(sessions ? { sessions } : {}),
+    ...(tasks ? { tasks } : {}),
   });
   const transport = new StdioServerTransport();
   transport.onclose = () => shutdown.abort();

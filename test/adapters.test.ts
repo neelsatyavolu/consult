@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { claude } from "../src/adapters/claude.js";
-import { codex } from "../src/adapters/codex.js";
-import { grok } from "../src/adapters/grok.js";
-import type { AskRequest, RunResult } from "../src/types.js";
+import { codex, codexWorker } from "../src/adapters/codex.js";
+import { grok, grokWorker } from "../src/adapters/grok.js";
+import { parseJsonLines } from "../src/jsonl.js";
+import type { AskRequest, RunResult, TaskRequest, Worker } from "../src/types.js";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -179,5 +180,82 @@ describe("forking a live session", () => {
     expect(valueAfter(inv.args, "--tools")).toBe("read_file,grep,list_dir");
     expect(valueAfter(inv.args, "--disallowed-tools")).toBe("Agent,search_tool,use_tool");
     expect(inv.args).not.toContain("--session-id");
+  });
+});
+
+describe("workers", () => {
+  const task: TaskRequest = { agent: "codex", task: "t", cwd: "/repo" };
+  const narrate = (worker: Worker, name: string) =>
+    parseJsonLines(fixture(name)).flatMap((e) => {
+      const text = worker.describe(e);
+      return text ? [text] : [];
+    });
+
+  it("codex works in the workspace-write sandbox without network, never asks, and takes prepare's MCP switches", () => {
+    const extra = ["-c", "features.plugins=false", "-c", "mcp_servers.consult.enabled=false"];
+    const inv = codexWorker.build({ ...task, model: "gpt-6-astra", effort: "high" }, "PROMPT", extra);
+    expect(inv.command).toBe("codex");
+    expect(inv.args.slice(0, 2)).toEqual(["exec", "--json"]);
+    expect(inv.args).toContain('sandbox_mode="workspace-write"');
+    expect(inv.args).toContain("sandbox_workspace_write.network_access=false");
+    expect(inv.args).toContain("sandbox_workspace_write.writable_roots=[]");
+    expect(inv.args).toContain('approval_policy="never"');
+    expect(inv.args).not.toContain('sandbox_mode="read-only"');
+    expect(inv.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(inv.args).toContain("mcp_servers.consult.enabled=false");
+    expect(inv.args).toContain('model="gpt-6-astra"');
+    expect(inv.args.at(-1)).toBe("PROMPT");
+    expect(codexWorker.prepare).toBe(codex.prepare);
+  });
+
+  it("codex narrates edits, commands, failures and messages", () => {
+    expect(narrate(codexWorker, "codex-task.jsonl")).toEqual([
+      "I'll add the greeting file and check it.\n",
+      "add /repo/hello.txt",
+      "$ cat hello.txt",
+      "$ npm test",
+      "exit 1: npm test",
+      "Added hello.txt containing hi; cat confirms it. There is no test script, so npm test fails.",
+    ]);
+  });
+
+  it("codex parses the final message as the report", () => {
+    expect(codexWorker.parse(fixture("codex-task.jsonl"))).toEqual({
+      answer: "Added hello.txt containing hi; cat confirms it. There is no test script, so npm test fails.",
+      sessionId: "44444444-5555-7666-8777-888888888888",
+    });
+  });
+
+  it("grok gets edit and shell tools, approved up front, with no MCP tools or subagents", () => {
+    const inv = grokWorker.build({ ...task, agent: "grok", model: "grok-4.7", effort: "low" }, "PROMPT", []);
+    expect(inv.command).toBe("grok");
+    expect(valueAfter(inv.args, "--single")).toBe("PROMPT");
+    expect(valueAfter(inv.args, "--tools")).toBe("read_file,grep,list_dir,search_replace,write_file,run_terminal_cmd");
+    expect(valueAfter(inv.args, "--disallowed-tools")).toBe("Agent,search_tool,use_tool");
+    expect(inv.args).toContain("--always-approve");
+    expect(valueAfter(inv.args, "--session-id")).toMatch(UUID);
+    expect(valueAfter(inv.args, "--model")).toBe("grok-4.7");
+    expect(valueAfter(inv.args, "--reasoning-effort")).toBe("low");
+  });
+
+  it("grok narrates text and tool calls", () => {
+    expect(narrate(grokWorker, "grok-task.jsonl")).toEqual([
+      "Creating the file. · write_file hello.txt",
+      "$ cat hello.txt",
+      "Added hello.txt containing hi and checked it with cat.",
+    ]);
+  });
+
+  it("grok parses the result as the report", () => {
+    expect(grokWorker.parse(fixture("grok-task.jsonl"))).toEqual({
+      answer: "Added hello.txt containing hi and checked it with cat.",
+      sessionId: "55555555-6666-4777-8888-999999999999",
+      model: "grok-4.7",
+    });
+  });
+
+  it("advisors keep their read-only tools", () => {
+    expect(valueAfter(grok.build({ ...base, agent: "grok" }, "P", []).args, "--tools")).toBe("read_file,grep,list_dir");
+    expect(grok.build({ ...base, agent: "grok" }, "P", []).args).not.toContain("--always-approve");
   });
 });

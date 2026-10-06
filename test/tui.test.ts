@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, withSessionsMode } from "../src/settings.js";
+import { DEFAULT_SETTINGS, withSessionsMode, withTasksEnabled } from "../src/settings.js";
 import { chooseInstallMode, parseSessionsFlag, planSettings } from "../src/tui.js";
 
 describe("parseSessionsFlag", () => {
@@ -37,14 +37,19 @@ describe("chooseInstallMode", () => {
 
 describe("planSettings", () => {
   it("applies the mode and registers or removes only the hosts that changed", () => {
-    const plan = planSettings(DEFAULT_SETTINGS, ["claude", "codex"], { mode: "repo", hosts: ["codex", "grok"] });
+    const plan = planSettings(DEFAULT_SETTINGS, ["claude", "codex"], { mode: "repo", tasks: false, hosts: ["codex", "grok"] });
     expect(plan.settings).toEqual(withSessionsMode(DEFAULT_SETTINGS, "repo"));
     expect(plan.register).toEqual(["grok"]);
     expect(plan.unregister).toEqual(["claude"]);
   });
 
+  it("applies the task dispatch choice", () => {
+    const plan = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: true, hosts: [] });
+    expect(plan.settings).toEqual(withTasksEnabled(DEFAULT_SETTINGS, true));
+  });
+
   it("changes nothing when nothing changed", () => {
-    expect(planSettings(DEFAULT_SETTINGS, ["claude"], { mode: "off", hosts: ["claude"] })).toEqual({
+    expect(planSettings(DEFAULT_SETTINGS, ["claude"], { mode: "off", tasks: false, hosts: ["claude"] })).toEqual({
       settings: DEFAULT_SETTINGS,
       register: [],
       unregister: [],

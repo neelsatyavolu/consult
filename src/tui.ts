@@ -5,6 +5,7 @@ import {
   SESSIONS_MODES,
   sessionsMode,
   withSessionsMode,
+  withTasksEnabled,
   type SessionsMode,
   type Settings,
 } from "./settings.js";
@@ -49,10 +50,10 @@ export interface SettingsPlan {
 export function planSettings(
   current: Settings,
   registered: readonly AgentName[],
-  chosen: { readonly mode: SessionsMode; readonly hosts: readonly AgentName[] },
+  chosen: { readonly mode: SessionsMode; readonly tasks: boolean; readonly hosts: readonly AgentName[] },
 ): SettingsPlan {
   return {
-    settings: withSessionsMode(current, chosen.mode),
+    settings: withTasksEnabled(withSessionsMode(current, chosen.mode), chosen.tasks),
     register: chosen.hosts.filter((agent) => !registered.includes(agent)),
     unregister: registered.filter((agent) => !chosen.hosts.includes(agent)),
   };
@@ -96,6 +97,11 @@ export async function runSettings(io: SettingsIo): Promise<void> {
 
   const mode = await promptSessionsMode(sessionsMode(current));
   if (mode === undefined) return cancel("No changes made.");
+  const tasks = await confirm({
+    message: "Task dispatch: let agents hand tasks to Codex and Grok workers that edit files and run commands?",
+    initialValue: current.tasks.enabled,
+  });
+  if (isCancel(tasks)) return cancel("No changes made.");
   const hosts =
     io.installed.length === 0
       ? []
@@ -107,7 +113,7 @@ export async function runSettings(io: SettingsIo): Promise<void> {
         });
   if (isCancel(hosts)) return cancel("No changes made.");
 
-  const plan = planSettings(current, registered, { mode, hosts });
+  const plan = planSettings(current, registered, { mode, tasks, hosts });
   io.save(plan.settings);
   const changed = [...plan.register, ...plan.unregister];
   const results = [
@@ -115,5 +121,5 @@ export async function runSettings(io: SettingsIo): Promise<void> {
     ...(plan.unregister.length > 0 ? await io.unregister(plan.unregister) : []),
   ].filter((r) => changed.includes(r.agent));
   for (const r of results) (r.ok ? log.success : log.error)(r.message);
-  outro(`Live sessions: ${mode}. Restart running agent sessions to apply.`);
+  outro(`Live sessions: ${mode}. Task dispatch: ${tasks ? "on" : "off"}. Restart running agent sessions to apply.`);
 }

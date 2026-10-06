@@ -42,6 +42,8 @@ export interface RunOptions {
   readonly signal?: AbortSignal;
   /** Combined stdout + stderr bytes after which the process is stopped. */
   readonly maxOutputBytes?: number;
+  /** Streams stdout to this callback line by line instead of returning it: RunResult.stdout is then empty. */
+  readonly onStdoutLine?: (line: string) => void;
 }
 
 /** Why run() killed the process, when it did. */
@@ -66,6 +68,28 @@ export interface Adapter {
   /** Like build, but in a new session forked from `sourceSessionId`. The source session is only read. */
   fork(sourceSessionId: string, request: AskRequest, prompt: string, extraArgs: readonly string[]): Invocation;
   /** Throws when the output holds an error or no answer. */
+  parse(stdout: string): Reply;
+}
+
+export const WORKERS = ["codex", "grok"] as const;
+export type WorkerName = (typeof WORKERS)[number];
+
+export interface TaskRequest {
+  readonly agent: WorkerName;
+  readonly task: string;
+  readonly cwd: string;
+  readonly model?: string;
+  readonly effort?: Effort;
+}
+
+/** Turns a task into one headless CLI call that may edit files in the cwd, and narrates its streamed output. */
+export interface Worker {
+  readonly name: WorkerName;
+  prepare?: Adapter["prepare"];
+  build(request: TaskRequest, prompt: string, extraArgs: readonly string[]): Invocation;
+  /** A one-line update for a streamed output event worth reporting, if any. */
+  describe(event: Record<string, unknown>): string | undefined;
+  /** Throws when the output holds an error or no final message. */
   parse(stdout: string): Reply;
 }
 

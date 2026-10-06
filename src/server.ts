@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { AgentInfo } from "./agents.js";
 import { withProgress } from "./progress.js";
 import { registerSessionTools, SESSIONS_INSTRUCTIONS, type SessionToolDeps } from "./session-tools.js";
+import { registerTaskTools, TASKS_INSTRUCTIONS } from "./task-tools.js";
+import type { TaskManager } from "./tasks.js";
 import { AGENTS, EFFORTS, SESSION_ID_PATTERN, type AgentName, type AskRequest, type AskResult } from "./types.js";
 import { VERSION } from "./version.js";
 
@@ -14,6 +16,8 @@ export interface ServerDeps {
   readonly progressIntervalMs?: number;
   /** Present when live sessions are on: adds list_sessions and ask_session. */
   readonly sessions?: SessionToolDeps;
+  /** Present when task dispatch is on: adds dispatch_task, task_status and cancel_task. */
+  readonly tasks?: TaskManager;
 }
 
 const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
@@ -89,8 +93,9 @@ export function createServer({
   defaultCwd,
   progressIntervalMs = DEFAULT_PROGRESS_INTERVAL_MS,
   sessions,
+  tasks,
 }: ServerDeps): McpServer {
-  const instructions = sessions ? `${INSTRUCTIONS}\n${SESSIONS_INSTRUCTIONS}` : INSTRUCTIONS;
+  const instructions = [INSTRUCTIONS, ...(sessions ? [SESSIONS_INSTRUCTIONS] : []), ...(tasks ? [TASKS_INSTRUCTIONS] : [])].join("\n");
   const server = new McpServer({ name: "consult", version: VERSION }, { instructions });
 
   server.registerTool(
@@ -178,5 +183,6 @@ export function createServer({
   );
 
   if (sessions) registerSessionTools(server, sessions, progressIntervalMs);
+  if (tasks) registerTaskTools(server, tasks, defaultCwd, progressIntervalMs);
   return server;
 }

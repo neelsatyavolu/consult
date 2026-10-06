@@ -1,0 +1,12 @@
+{"type":"thread.started","thread_id":"44444444-5555-7666-8777-888888888888"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Planning the change**"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"I'll add the greeting file and check it.\n"}}
+{"type":"item.started","item":{"id":"item_2","type":"file_change","changes":[{"path":"/repo/hello.txt","kind":"add"}],"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"file_change","changes":[{"path":"/repo/hello.txt","kind":"add"}],"status":"completed"}}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'cat hello.txt'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'cat hello.txt'","aggregated_output":"hi\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_4","type":"command_execution","command":"/bin/zsh -lc 'npm test'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_4","type":"command_execution","command":"/bin/zsh -lc 'npm test'","aggregated_output":"no test specified\n","exit_code":1,"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_5","type":"agent_message","text":"Added hello.txt containing hi; cat confirms it. There is no test script, so npm test fails."}}
+{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":0,"output_tokens":100}}

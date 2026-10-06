@@ -12,9 +12,9 @@ import { codex } from "../src/adapters/codex.js";
 import { grok } from "../src/adapters/grok.js";
 import { createConsult } from "../src/consult.js";
 import { run } from "../src/run.js";
-import { DEFAULT_SETTINGS, saveSettings, settingsPath, withSessionsMode } from "../src/settings.js";
+import { DEFAULT_SETTINGS, saveSettings, settingsPath, withSessionsMode, withTasksEnabled } from "../src/settings.js";
 import { systemIdentityDeps } from "../src/sessions/identity.js";
-import { AGENTS } from "../src/types.js";
+import { AGENTS, WORKERS } from "../src/types.js";
 import type { AgentName } from "../src/types.js";
 
 const live = process.env.CONSULT_LIVE === "1";
@@ -158,6 +158,39 @@ describe.skipIf(!live)("live sessions over MCP", () => {
     } finally {
       await asker.close();
       await owner.close();
+    }
+  });
+});
+
+describe.skipIf(!live)("live task dispatch over MCP", () => {
+  it.each(WORKERS)("%s edits files in the task's cwd and reports back with progress", { timeout: 900_000 }, async (agent) => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "consult-task-")));
+    const env = { ...process.env, XDG_CONFIG_HOME: join(dir, ".config") } as Record<string, string>;
+    saveSettings(settingsPath(env), withTasksEnabled(DEFAULT_SETTINGS, true));
+    const client = new Client({ name: "live-test", version: "0" });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, "dist/cli.js"), "serve"], cwd: dir, env }));
+    try {
+      const dispatched = await client.callTool({
+        name: "dispatch_task",
+        arguments: { agent, task: "Create a file named hello.txt containing the single word hi, then run `cat hello.txt` to check it." },
+      });
+      expect(dispatched.isError, JSON.stringify(dispatched.content)).toBeFalsy();
+      const { task_id } = dispatched.structuredContent as { task_id: string };
+      const progress: string[] = [];
+      let status: { state: string; error?: string; result?: { report: string } } = { state: "running" };
+      while (status.state === "running") {
+        const res = await client.callTool({ name: "task_status", arguments: { task_id, wait_sec: 120 } }, undefined, {
+          timeout: 300_000,
+          onprogress: (p) => progress.push(p.message ?? ""),
+        });
+        status = res.structuredContent as typeof status;
+      }
+      expect(status.state, status.error).toBe("succeeded");
+      expect(status.result?.report).toBeTruthy();
+      expect(readFileSync(join(dir, "hello.txt"), "utf8").trim()).toBe("hi");
+      expect(progress.some((m) => m.includes("cat hello.txt")), progress.join("\n")).toBe(true);
+    } finally {
+      await client.close();
     }
   });
 });

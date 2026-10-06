@@ -10,6 +10,7 @@ import {
   sessionsMode,
   settingsPath,
   withSessionsMode,
+  withTasksEnabled,
 } from "../src/settings.js";
 
 const tmpPath = () => join(mkdtempSync(join(tmpdir(), "consult-settings-")), "consult", "settings.json");
@@ -25,8 +26,22 @@ describe("settingsPath", () => {
 });
 
 describe("loadSettings / saveSettings", () => {
-  it("returns the defaults, with live sessions off, when the file does not exist", () => {
-    expect(loadSettings(tmpPath())).toEqual({ version: 1, sessions: { enabled: false, scope: "repo" } });
+  it("returns the defaults, with live sessions and task dispatch off, when the file does not exist", () => {
+    expect(loadSettings(tmpPath())).toEqual({ version: 1, sessions: { enabled: false, scope: "repo" }, tasks: { enabled: false } });
+  });
+
+  it("reads a file written before task dispatch existed as task dispatch off", () => {
+    const path = tmpPath();
+    saveSettings(path, DEFAULT_SETTINGS);
+    writeFileSync(path, JSON.stringify({ version: 1, sessions: { enabled: true, scope: "machine" } }));
+    expect(loadSettings(path)).toEqual({ version: 1, sessions: { enabled: true, scope: "machine" }, tasks: { enabled: false } });
+  });
+
+  it("round-trips task dispatch", () => {
+    const path = tmpPath();
+    saveSettings(path, withTasksEnabled(DEFAULT_SETTINGS, true));
+    expect(loadSettings(path).tasks.enabled).toBe(true);
+    expect(DEFAULT_SETTINGS.tasks.enabled).toBe(false);
   });
 
   it("round-trips settings and writes a file only the user can read", () => {

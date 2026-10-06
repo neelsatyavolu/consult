@@ -4,7 +4,7 @@
 
 consult is an MCP server that lets Claude Code, Codex and Grok ask each other for advice through the CLIs already signed in on your machine. No API keys: each advisor runs on the subscription its CLI already uses.
 
-Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once.
+Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once. With [task dispatch](#task-dispatch) on, an agent can also hand a coding task to a Codex or Grok worker and follow its progress.
 
 [consult.n3el.dev](https://consult.n3el.dev) · [npm](https://www.npmjs.com/package/consult-mcp)
 
@@ -54,6 +54,8 @@ To pin to a specific build instead of following `@latest`, install globally with
 
 **`list_sessions`** and **`ask_session`** `{session_id, question, effort?}` appear when [live sessions](#live-sessions) are on.
 
+**`dispatch_task`**, **`task_status`** and **`cancel_task`** appear when [task dispatch](#task-dispatch) is on.
+
 While an advisor is working, the server sends MCP progress notifications (`codex is thinking (40s)`), so hosts that show progress don't look stuck.
 
 ## When agents consult
@@ -78,7 +80,7 @@ Turn it on when you install, or later:
 
 ```bash
 npx -y consult-mcp@latest install --sessions=repo   # or off, machine; without the flag, install asks when run in a terminal
-npx -y consult-mcp@latest settings                  # interactive: live sessions, and which agents use consult
+npx -y consult-mcp@latest settings                  # interactive: live sessions, task dispatch, and which agents use consult
 ```
 
 | Setting | Who can see and ask whom |
@@ -94,6 +96,18 @@ Settings are stored in `$XDG_CONFIG_HOME/consult/settings.json` (default `~/.con
 | claude | the record Claude Code keeps for each running process (`~/.claude/sessions/<pid>.json`), so it follows `/resume` and `/clear`; `CLAUDE_CODE_SESSION_ID` as a fallback. Listed once the conversation is saved, after its first message |
 | codex | the `rollout-*.jsonl` file the codex process holds open, from the session's first turn on |
 | grok | the `~/.grok/sessions/<cwd>/<session id>/events.jsonl` file the interactive grok process holds open, from the session's first turn on; not identified if several sessions are open |
+
+## Task dispatch
+
+Off by default. When on, an agent can hand a well-defined coding task to a Codex or Grok worker, keep working, and check in on it. For example, Claude Code can have Codex write the tests for a module while it builds the next one.
+
+- **`dispatch_task`** `{agent, task, model?, effort?, cwd?}` starts the worker in the background and returns a `task_id` at once. `agent` is `codex` or `grok`. The worker runs headless in `cwd` (default: the host's directory) and can edit files and run commands there. It can't see the host's conversation or ask questions, so the task must be self-contained.
+- **`task_status`** `{task_id?, wait_sec?, since?}` returns the task's state (`running`, `succeeded`, `failed`, `cancelled`), its latest updates (commands run, files edited, messages), and the worker's final report once it finishes. `wait_sec` (up to 600) waits for the task to finish, sending each update as an MCP progress notification as it happens. `since` returns only updates after the `last_seq` of an earlier call (the server keeps the last 200; `earlier_updates_dropped` says when you missed some). Without `task_id` it lists all tasks.
+- **`cancel_task`** `{task_id}` stops the worker. Files it already changed stay changed.
+
+Tasks live in the consult server's memory: they end with the agent session that started them, and the server stops any still running when it exits. `CONSULT_TASK_TIMEOUT_SEC` (default 3600) caps each task. The report includes the worker's `session_id`; pass it to `ask_agent` with the same agent to ask a read-only follow-up about the work.
+
+Turn it on with `npx -y consult-mcp@latest settings`; it applies to agent sessions started afterwards. Workers change files, so review their diff before building on it, and don't point two workers at the same files.
 
 ## How advisors are contained
 
@@ -111,6 +125,15 @@ consult doesn't use Grok's kernel sandbox (`--sandbox read-only`), because it re
 
 The first message of each session also tells the advisor that another agent is consulting it. It should answer directly, skip approval and brainstorming workflows, and not modify anything.
 
+[Task dispatch](#task-dispatch) workers are the one exception to read-only, and only when you turn it on. They stay headless and have no MCP servers, so they can't call consult either:
+
+| CLI | Worker flags |
+| --- | --- |
+| codex | `exec`, `sandbox_mode="workspace-write"` with `network_access=false` and `writable_roots=[]` (writes confined to the cwd and temp dirs, no network), `approval_policy="never"`, plugins off, and every enabled MCP server disabled by name |
+| grok | `--tools read_file,grep,list_dir,search_replace,write_file,run_terminal_cmd --always-approve --disallowed-tools Agent,search_tool,use_tool`. Without Grok's kernel sandbox (see above), its shell commands run unconfined as your user, with network access. Its shell could even start another agent CLI, so for grok "no MCP servers" stops loops through consult but is not a hard boundary |
+
+Their first message tells them another agent dispatched them, to finish the task without asking questions, to stay within the task and the directory, and not to commit or push unless the task says so.
+
 Advisors send what they read to their own provider. [SECURITY.md](SECURITY.md) covers read scope and the threat model.
 
 ## CLI
@@ -124,7 +147,7 @@ consult agents
 consult settings                      # live sessions, and which agents use consult
 ```
 
-Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. `CONSULT_TIMEOUT_SEC` (default 900) caps each advisor call.
+Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. `CONSULT_TIMEOUT_SEC` (default 900) caps each advisor call, and `CONSULT_TASK_TIMEOUT_SEC` (default 3600) each dispatched task.
 
 ## Development
 

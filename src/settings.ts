@@ -10,15 +10,18 @@ export type Scope = Exclude<SessionsMode, "off">;
 const schema = z.object({
   version: z.literal(1),
   sessions: z.object({ enabled: z.boolean(), scope: z.enum(["repo", "machine"]) }),
+  // Added after the first release, so files written before it have no tasks entry.
+  tasks: z.object({ enabled: z.boolean() }).default({ enabled: false }),
 });
 
 export interface Settings {
   readonly version: 1;
   readonly sessions: { readonly enabled: boolean; readonly scope: Scope };
+  readonly tasks: { readonly enabled: boolean };
 }
 
-/** Live sessions stay off until the user turns them on. */
-export const DEFAULT_SETTINGS: Settings = { version: 1, sessions: { enabled: false, scope: "repo" } };
+/** Live sessions and task dispatch stay off until the user turns them on. */
+export const DEFAULT_SETTINGS: Settings = { version: 1, sessions: { enabled: false, scope: "repo" }, tasks: { enabled: false } };
 
 export class SettingsError extends Error {
   override readonly name = "SettingsError";
@@ -70,3 +73,5 @@ export function withSessionsMode(settings: Settings, mode: SessionsMode): Settin
     sessions: mode === "off" ? { ...settings.sessions, enabled: false } : { enabled: true, scope: mode },
   };
 }
+
+export const withTasksEnabled = (settings: Settings, enabled: boolean): Settings => ({ ...settings, tasks: { enabled } });

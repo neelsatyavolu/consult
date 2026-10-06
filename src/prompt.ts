@@ -21,3 +21,13 @@ Be concrete and concise, and cite files and lines when relevant.`;
 export function frameForkPrompt(question: string): string {
   return `${FORK_BRIEFING}\n\nQuestion from the other agent:\n\n${question}`;
 }
+
+const TASK_BRIEFING = `Another AI coding agent working in this repository has dispatched you to complete a task on its behalf. Work in your current directory.
+Nobody can answer questions or approve plans: do not follow brainstorming, planning or approval workflows. Make reasonable assumptions, note them, and finish the task.
+Keep changes to what the task asks for. Do not commit, push, or touch anything outside this directory unless the task says to. Verify your work (build, tests) where you can.
+End with a short report: what you changed (files), how you verified it, and anything left undone.`;
+
+/** Builds the text sent to a worker. Like framePrompt, it starts with a letter. */
+export function frameTaskPrompt(task: string): string {
+  return `${TASK_BRIEFING}\n\nTask:\n\n${task}`;
+}

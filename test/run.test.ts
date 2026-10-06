@@ -7,6 +7,23 @@ describe("run", () => {
     expect(r).toEqual({ stdout: "out\n", stderr: "err\n", code: 3 });
   });
 
+  it("streams complete stdout lines as they arrive, even when a line spans chunks", async () => {
+    const lines: string[] = [];
+    const r = await run("sh", ["-c", "printf 'a\\nb'; sleep 0.1; printf 'c\\nd\\n'"], {
+      cwd: "/",
+      timeoutMs: 5000,
+      onStdoutLine: (line) => lines.push(line),
+    });
+    expect(lines).toEqual(["a", "bc", "d"]);
+    expect(r.stdout).toBe("");
+  });
+
+  it("streams a last line that has no newline, and multibyte characters split across chunks", async () => {
+    const lines: string[] = [];
+    await run("sh", ["-c", "printf 'x\\n\\303'; sleep 0.1; printf '\\251 end'"], { cwd: "/", timeoutMs: 5000, onStdoutLine: (l) => lines.push(l) });
+    expect(lines).toEqual(["x", "é end"]);
+  });
+
   it("does not leave stdin open for the child", async () => {
     const r = await run("cat", [], { cwd: "/", timeoutMs: 5000 });
     expect(r.code).toBe(0);

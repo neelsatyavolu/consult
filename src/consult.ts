@@ -9,6 +9,7 @@ import {
   type Effort,
   type Invocation,
   type Runner,
+  type RunResult,
   type StopReason,
 } from "./types.js";
 
@@ -20,15 +21,19 @@ export interface ConsultDeps {
 
 const STDERR_TAIL = 2000;
 
-function validate(request: AskRequest): void {
-  if (!request.question.trim()) throw new AdvisorError("question must not be empty");
+export function assertDirectory(cwd: string): void {
   let isDir = false;
   try {
-    isDir = statSync(request.cwd).isDirectory();
+    isDir = statSync(cwd).isDirectory();
   } catch {
     // Reported below.
   }
-  if (!isDir) throw new AdvisorError(`cwd is not a directory: ${request.cwd}`);
+  if (!isDir) throw new AdvisorError(`cwd is not a directory: ${cwd}`);
+}
+
+function validate(request: AskRequest): void {
+  if (!request.question.trim()) throw new AdvisorError("question must not be empty");
+  assertDirectory(request.cwd);
 }
 
 function stoppedMessage(agent: AgentName, reason: StopReason, timeoutMs: number): string {
@@ -39,6 +44,15 @@ function stoppedMessage(agent: AgentName, reason: StopReason, timeoutMs: number)
       return `${agent} call was cancelled`;
     case "output_limit":
       return `${agent} produced too much output and was stopped`;
+  }
+}
+
+/** Throws when the CLI was stopped or exited non-zero. */
+export function assertExitedCleanly(agent: AgentName, res: RunResult, timeoutMs: number): void {
+  if (res.stopped) throw new AdvisorError(stoppedMessage(agent, res.stopped, timeoutMs));
+  if (res.code !== 0) {
+    const detail = (res.stderr.trim() || res.stdout.trim()).slice(-STDERR_TAIL);
+    throw new AdvisorError(`${agent} exited with code ${res.code}: ${detail}`);
   }
 }
 
@@ -62,12 +76,7 @@ export function createConsult({ run, adapters, timeoutMs }: ConsultDeps) {
     const extraArgs = adapter.prepare ? await adapter.prepare(run, request.cwd, signal) : [];
     const invocation = invoke(extraArgs);
     const res = await run(invocation.command, invocation.args, { cwd: request.cwd, timeoutMs, signal });
-
-    if (res.stopped) throw new AdvisorError(stoppedMessage(adapter.name, res.stopped, timeoutMs));
-    if (res.code !== 0) {
-      const detail = (res.stderr.trim() || res.stdout.trim()).slice(-STDERR_TAIL);
-      throw new AdvisorError(`${adapter.name} exited with code ${res.code}: ${detail}`);
-    }
+    assertExitedCleanly(adapter.name, res, timeoutMs);
     return { agent: adapter.name, ...adapter.parse(res.stdout), durationMs: Date.now() - started };
   }
 
