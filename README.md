@@ -143,11 +143,14 @@ The same calls are available from the shell, which is handy for debugging:
 ```bash
 consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe under concurrent calls?"
 consult ask codex --resume <session_id> "What would you change first?"
+consult ask grok - < question.md      # long questions from a file or pipe
 consult agents
-consult settings                      # live sessions, and which agents use consult
+consult settings                      # live sessions, task dispatch, and which agents use consult
 ```
 
-Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. `CONSULT_TIMEOUT_SEC` (default 900) caps each advisor call, and `CONSULT_TASK_TIMEOUT_SEC` (default 3600) each dispatched task.
+Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. Advisors are read-only here too: the same containment flags apply, so there is no need to tell them not to edit files. While one works, `consult ask` prints timestamped progress to stderr (commands run and messages for codex and grok, a heartbeat after 30 quiet seconds for any agent) and only the answer to stdout.
+
+`CONSULT_TIMEOUT_SEC` (default 900) caps each advisor call; raise it for long grok runs on large questions. `CONSULT_TASK_TIMEOUT_SEC` (default 3600) caps each dispatched task.
 
 ## Development
 

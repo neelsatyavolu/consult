@@ -1,6 +1,5 @@
 import { assertDirectory, assertExitedCleanly } from "./consult.js";
-import { parseJsonLines } from "./jsonl.js";
-import { oneLine } from "./narrate.js";
+import { describeLine } from "./narrate.js";
 import { frameTaskPrompt } from "./prompt.js";
 import { AdvisorError, type Reply, type Runner, type TaskRequest, type Worker, type WorkerName } from "./types.js";
 
@@ -87,19 +86,12 @@ export function createTaskManager({ run, workers, timeoutMs, signal, now = Date.
   }
 
   function narrate(id: string, worker: Worker, line: string): void {
-    // A malformed event must never break the run, so narration failures are dropped.
-    try {
-      const [event] = parseJsonLines(line);
-      const text = event ? worker.describe(event)?.trim() : undefined;
-      if (!text) return;
-      change(id, (view) => {
-        const seq = (view.updates.at(-1)?.seq ?? 0) + 1;
-        const next = { seq, atMs: now() - view.startedAt, text: oneLine(text) };
-        return { ...view, updates: [...view.updates, next].slice(-MAX_UPDATES) };
-      });
-    } catch {
-      // Ignored, see above.
-    }
+    const text = describeLine((event) => worker.describe(event), line);
+    if (!text) return;
+    change(id, (view) => {
+      const seq = (view.updates.at(-1)?.seq ?? 0) + 1;
+      return { ...view, updates: [...view.updates, { seq, atMs: now() - view.startedAt, text }].slice(-MAX_UPDATES) };
+    });
   }
 
   function finish(id: string, outcome: Pick<TaskView, "state" | "result" | "error">): void {

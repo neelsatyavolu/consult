@@ -69,6 +69,8 @@ export interface Adapter {
   fork(sourceSessionId: string, request: AskRequest, prompt: string, extraArgs: readonly string[]): Invocation;
   /** Throws when the output holds an error or no answer. */
   parse(stdout: string): Reply;
+  /** For CLIs that stream JSONL: a one-line update for an output event worth reporting, if any. */
+  describe?(event: Record<string, unknown>): string | undefined;
 }
 
 export const WORKERS = ["codex", "grok"] as const;

@@ -37,6 +37,25 @@ describe("consult.ask", () => {
     expect(prompt).toMatch(/read-only/i);
   });
 
+  it("streams one-line updates when the adapter can describe its output, and still parses the full output", async () => {
+    const run = vi.fn<Runner>(async (_cmd, _args, opts) => {
+      for (const line of ['{"say":"$ rg retry"}', "noise", '{"quiet":true}', "final"]) opts.onStdoutLine?.(line);
+      return ok("");
+    });
+    const adapter = fakeAdapter("codex", { describe: (e) => (typeof e.say === "string" ? e.say : undefined) });
+    const updates: string[] = [];
+    const result = await setup(run, adapter).ask({ agent: "codex", question: "q", cwd: "/tmp" }, undefined, (t) => updates.push(t));
+    expect(updates).toEqual(["$ rg retry"]);
+    expect(result.answer).toBe('answer:{"say":"$ rg retry"}\nnoise\n{"quiet":true}\nfinal');
+  });
+
+  it("does not stream when the adapter can't describe its output", async () => {
+    const run = vi.fn<Runner>(async () => ok("raw"));
+    const result = await setup(run).ask({ agent: "codex", question: "q", cwd: "/tmp" }, undefined, () => {});
+    expect(run.mock.calls[0]![2].onStdoutLine).toBeUndefined();
+    expect(result.answer).toBe("answer:raw");
+  });
+
   it("frames follow-ups without repeating the advisor briefing", async () => {
     const run = vi.fn<Runner>(async () => ok());
     await setup(run).ask({ agent: "codex", question: "-and what about X?", cwd: "/tmp", sessionId: "sid-1" });

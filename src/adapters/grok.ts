@@ -44,21 +44,6 @@ function parse(stdout: string): Reply {
   return { answer: result.result, sessionId: result.session_id, ...(typeof model === "string" ? { model } : {}) };
 }
 
-export const grok: Adapter = {
-  name: "grok",
-  command: "grok",
-
-  build(request, prompt) {
-    return invocation(ADVISOR_TOOLS, request, prompt, request.sessionId ? ["--resume", request.sessionId] : ["--session-id", randomUUID()]);
-  },
-
-  fork(sourceSessionId, request, prompt) {
-    return invocation(ADVISOR_TOOLS, request, prompt, ["--resume", sourceSessionId, "--fork-session"]);
-  },
-
-  parse,
-};
-
 interface ContentBlock {
   readonly type?: string;
   readonly text?: string;
@@ -72,6 +57,33 @@ function describeTool(name: string, input: Record<string, unknown> = {}): string
   return target ? `${name} ${target}` : name;
 }
 
+function describe(event: Record<string, unknown>): string | undefined {
+  if (event.type !== "assistant") return undefined;
+  const content = (event.message as { content?: readonly ContentBlock[] } | undefined)?.content ?? [];
+  const parts = content.flatMap((block) => {
+    if (block.type === "text" && block.text?.trim()) return [block.text];
+    if (block.type === "tool_use" && block.name) return [describeTool(block.name, block.input)];
+    return [];
+  });
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+export const grok: Adapter = {
+  name: "grok",
+  command: "grok",
+
+  build(request, prompt) {
+    return invocation(ADVISOR_TOOLS, request, prompt, request.sessionId ? ["--resume", request.sessionId] : ["--session-id", randomUUID()]);
+  },
+
+  fork(sourceSessionId, request, prompt) {
+    return invocation(ADVISOR_TOOLS, request, prompt, ["--resume", sourceSessionId, "--fork-session"]);
+  },
+
+  parse,
+  describe,
+};
+
 export const grokWorker: Worker = {
   name: "grok",
 
@@ -79,16 +91,6 @@ export const grokWorker: Worker = {
     return invocation(WORKER_TOOLS, request, prompt, ["--session-id", randomUUID()]);
   },
 
-  describe(event) {
-    if (event.type !== "assistant") return undefined;
-    const content = (event.message as { content?: readonly ContentBlock[] } | undefined)?.content ?? [];
-    const parts = content.flatMap((block) => {
-      if (block.type === "text" && block.text?.trim()) return [block.text];
-      if (block.type === "tool_use" && block.name) return [describeTool(block.name, block.input)];
-      return [];
-    });
-    return parts.length > 0 ? parts.join(" · ") : undefined;
-  },
-
+  describe,
   parse,
 };

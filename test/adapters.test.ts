@@ -254,6 +254,12 @@ describe("workers", () => {
     });
   });
 
+  it("advisors narrate their streams the same way workers do; claude does not stream", () => {
+    expect(codex.describe).toBe(codexWorker.describe);
+    expect(grok.describe).toBe(grokWorker.describe);
+    expect(claude.describe).toBeUndefined();
+  });
+
   it("advisors keep their read-only tools", () => {
     expect(valueAfter(grok.build({ ...base, agent: "grok" }, "P", []).args, "--tools")).toBe("read_file,grep,list_dir");
     expect(grok.build({ ...base, agent: "grok" }, "P", []).args).not.toContain("--always-approve");

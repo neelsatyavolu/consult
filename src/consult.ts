@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { describeLine } from "./narrate.js";
 import { frameForkPrompt, framePrompt } from "./prompt.js";
 import {
   AdvisorError,
@@ -69,21 +70,34 @@ export function createConsult({ run, adapters, timeoutMs }: ConsultDeps) {
     request: AskRequest,
     invoke: (extraArgs: readonly string[]) => Invocation,
     signal?: AbortSignal,
+    onUpdate?: (text: string) => void,
   ): Promise<AskResult> {
     validate(request);
     const started = Date.now();
     // Computed per call, never cached: containment must reflect the config as it is right now.
     const extraArgs = adapter.prepare ? await adapter.prepare(run, request.cwd, signal) : [];
     const invocation = invoke(extraArgs);
-    const res = await run(invocation.command, invocation.args, { cwd: request.cwd, timeoutMs, signal });
-    assertExitedCleanly(adapter.name, res, timeoutMs);
-    return { agent: adapter.name, ...adapter.parse(res.stdout), durationMs: Date.now() - started };
+    const { describe } = adapter;
+    const lines: string[] = [];
+    const onStdoutLine =
+      onUpdate && describe
+        ? (line: string) => {
+            lines.push(line);
+            const text = describeLine(describe, line);
+            if (text) onUpdate(text);
+          }
+        : undefined;
+    const res = await run(invocation.command, invocation.args, { cwd: request.cwd, timeoutMs, signal, onStdoutLine });
+    const stdout = onStdoutLine ? lines.join("\n") : res.stdout;
+    assertExitedCleanly(adapter.name, { ...res, stdout }, timeoutMs);
+    return { agent: adapter.name, ...adapter.parse(stdout), durationMs: Date.now() - started };
   }
 
-  async function ask(request: AskRequest, signal?: AbortSignal): Promise<AskResult> {
+  /** `onUpdate` receives one-line progress updates for CLIs that stream their work (codex, grok). */
+  async function ask(request: AskRequest, signal?: AbortSignal, onUpdate?: (text: string) => void): Promise<AskResult> {
     const adapter = adapters[request.agent];
     const prompt = framePrompt(request.question, Boolean(request.sessionId));
-    return execute(adapter, request, (extra) => adapter.build(request, prompt, extra), signal);
+    return execute(adapter, request, (extra) => adapter.build(request, prompt, extra), signal, onUpdate);
   }
 
   /** Asks a read-only fork of a live session. It runs in that session's directory, where its CLI can find it. */

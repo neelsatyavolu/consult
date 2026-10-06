@@ -8,6 +8,7 @@ import { codex, codexWorker } from "./adapters/codex.js";
 import { grok, grokWorker } from "./adapters/grok.js";
 import { listAgents } from "./agents.js";
 import { createConsult } from "./consult.js";
+import { progressLog } from "./narrate.js";
 import { findOnPath, install, isRegistered, serverCommand, uninstall, type InstallResult } from "./install.js";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, sessionsMode, settingsPath, withSessionsMode, type SessionsMode } from "./settings.js";
 import { run } from "./run.js";
@@ -22,12 +23,15 @@ import { VERSION } from "./version.js";
 
 const DEFAULT_TIMEOUT_SEC = 900;
 const DEFAULT_TASK_TIMEOUT_SEC = 3600;
+const HEARTBEAT_MS = 30_000;
 
 const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
 
   consult serve                          run the MCP server (stdio)
   consult ask <agent> [options] <question...>
+                                         ask an advisor; it can read --cwd but never change anything
       --model <id>  --effort low|medium|high  --resume <session_id>  --cwd <dir>
+      a question of "-" is read from stdin; progress goes to stderr, the answer alone to stdout
   consult agents                         list installed CLIs and models
   consult install [--sessions off|repo|machine]
                                          register the MCP server with claude, codex and grok
@@ -35,7 +39,8 @@ const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
   consult settings                       live sessions, task dispatch, and which agents use consult (interactive)
 
 agents: ${AGENTS.join(", ")}
-timeouts: CONSULT_TIMEOUT_SEC per advisor call (default ${DEFAULT_TIMEOUT_SEC}), CONSULT_TASK_TIMEOUT_SEC per task (default ${DEFAULT_TASK_TIMEOUT_SEC})`;
+timeouts: CONSULT_TIMEOUT_SEC per advisor call (default ${DEFAULT_TIMEOUT_SEC}; raise it for long grok runs),
+          CONSULT_TASK_TIMEOUT_SEC per task (default ${DEFAULT_TASK_TIMEOUT_SEC})`;
 
 function secondsFromEnv(name: string, defaultSec: number): number {
   const raw = process.env[name];
@@ -108,6 +113,12 @@ async function serve(): Promise<void> {
   await server.connect(transport);
 }
 
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 async function askCommand(argv: readonly string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: [...argv],
@@ -121,14 +132,26 @@ async function askCommand(argv: readonly string[]): Promise<void> {
     throw new Error("--resume must be a session id: letters, digits and hyphens, not starting with a hyphen");
   }
   refuseLive(values.resume);
-  const result = await consult().ask({
-    agent: agent as AgentName,
-    question: words.join(" "),
-    cwd: values.cwd ?? process.cwd(),
-    model: values.model,
-    effort: values.effort as Effort | undefined,
-    sessionId: values.resume,
-  });
+  const question = words.length === 1 && words[0] === "-" ? await readStdin() : words.join(" ");
+  const progress = progressLog((line) => process.stderr.write(line), `${agent} is still working`, HEARTBEAT_MS);
+  progress.update(`asking ${agent} (read-only)`);
+  let result;
+  try {
+    result = await consult().ask(
+      {
+        agent: agent as AgentName,
+        question,
+        cwd: values.cwd ?? process.cwd(),
+        model: values.model,
+        effort: values.effort as Effort | undefined,
+        sessionId: values.resume,
+      },
+      undefined,
+      progress.update,
+    );
+  } finally {
+    progress.stop();
+  }
   process.stdout.write(`${result.answer}\n`);
   process.stderr.write(`\n[${result.agent}${result.model ? ` ${result.model}` : ""} · session ${result.sessionId} · ${(result.durationMs / 1000).toFixed(1)}s]\n`);
 }

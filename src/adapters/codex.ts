@@ -61,6 +61,31 @@ function parse(stdout: string): Reply {
   return { answer, sessionId: threadId };
 }
 
+interface CodexItem {
+  readonly type?: string;
+  readonly text?: string;
+  readonly command?: string;
+  readonly exit_code?: number | null;
+  readonly changes?: readonly { readonly path?: string; readonly kind?: string }[];
+}
+
+function describe(event: Record<string, unknown>): string | undefined {
+  const item = event.item as CodexItem | undefined;
+  if (!item) return undefined;
+  if (event.type === "item.started" && item.type === "command_execution" && item.command) return `$ ${unwrapShell(item.command)}`;
+  if (event.type !== "item.completed") return undefined;
+  switch (item.type) {
+    case "command_execution":
+      return item.exit_code && item.command ? `exit ${item.exit_code}: ${unwrapShell(item.command)}` : undefined;
+    case "file_change":
+      return item.changes?.map((c) => `${c.kind ?? "edit"} ${c.path ?? "?"}`).join(", ");
+    case "agent_message":
+      return item.text;
+    default:
+      return undefined;
+  }
+}
+
 export const codex: Adapter = {
   name: "codex",
   command: "codex",
@@ -81,15 +106,8 @@ export const codex: Adapter = {
   },
 
   parse,
+  describe,
 };
-
-interface CodexItem {
-  readonly type?: string;
-  readonly text?: string;
-  readonly command?: string;
-  readonly exit_code?: number | null;
-  readonly changes?: readonly { readonly path?: string; readonly kind?: string }[];
-}
 
 export const codexWorker: Worker = {
   name: "codex",
@@ -99,22 +117,6 @@ export const codexWorker: Worker = {
     return { command: "codex", args: ["exec", "--json", "--skip-git-repo-check", ...configArgs(WORKSPACE_WRITE, request, extraArgs), prompt] };
   },
 
-  describe(event) {
-    const item = event.item as CodexItem | undefined;
-    if (!item) return undefined;
-    if (event.type === "item.started" && item.type === "command_execution" && item.command) return `$ ${unwrapShell(item.command)}`;
-    if (event.type !== "item.completed") return undefined;
-    switch (item.type) {
-      case "command_execution":
-        return item.exit_code && item.command ? `exit ${item.exit_code}: ${unwrapShell(item.command)}` : undefined;
-      case "file_change":
-        return item.changes?.map((c) => `${c.kind ?? "edit"} ${c.path ?? "?"}`).join(", ");
-      case "agent_message":
-        return item.text;
-      default:
-        return undefined;
-    }
-  },
-
+  describe,
   parse,
 };
