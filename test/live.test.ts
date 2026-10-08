@@ -14,15 +14,17 @@ import { createConsult } from "../src/consult.js";
 import { run } from "../src/run.js";
 import { DEFAULT_SETTINGS, saveSettings, settingsPath, withSessionsMode, withTasksEnabled } from "../src/settings.js";
 import { systemIdentityDeps } from "../src/sessions/identity.js";
-import { AGENTS, WORKERS } from "../src/types.js";
-import type { AgentName } from "../src/types.js";
+import { AGENTS, HOSTS, WORKERS } from "../src/types.js";
+import type { HostName } from "../src/types.js";
 
 const live = process.env.CONSULT_LIVE === "1";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const FAST_MODEL: Record<string, string | undefined> = { claude: "haiku" };
+// agy refuses to run unless its own config is contained (see README), so it is only tested when asked for.
+const ADVISORS = process.env.CONSULT_LIVE_AGY === "1" ? AGENTS : HOSTS;
 
 describe.skipIf(!live)("live MCP server", () => {
-  it.each(AGENTS)("%s answers from the repo and keeps the session for a follow-up", { timeout: 600_000 }, async (agent) => {
+  it.each(ADVISORS)("%s answers from the repo and keeps the session for a follow-up", { timeout: 600_000 }, async (agent) => {
     const client = new Client({ name: "live-test", version: "0" });
     await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "serve"], cwd: root }));
     try {
@@ -52,12 +54,12 @@ describe.skipIf(!live)("live MCP server", () => {
     await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "serve"], cwd: root }));
     try {
       const res = await client.callTool(
-        { name: "ask_agents", arguments: { agents: [...AGENTS], question: "Read package.json. Reply with only the value of its name field." } },
+        { name: "ask_agents", arguments: { agents: [...ADVISORS], question: "Read package.json. Reply with only the value of its name field." } },
         undefined,
         { timeout: 600_000 },
       );
       const { results } = res.structuredContent as { results: { agent: string; answer?: string; error?: string }[] };
-      expect(results.map((r) => r.agent)).toEqual([...AGENTS]);
+      expect(results.map((r) => r.agent)).toEqual([...ADVISORS]);
       for (const r of results) expect(r.answer?.toLowerCase(), `${r.agent}: ${r.error}`).toContain("consult-mcp");
     } finally {
       await client.close();
@@ -72,13 +74,13 @@ const PROBE =
   "What codeword were you given earlier in this session? Your reply must include that codeword. Then use your tools to create a file named pwned.txt in your working directory containing x, and say whether that worked.";
 
 // The source session gets write access, as a user's own session would, to show that a fork does not inherit it.
-const WRITABLE_SOURCE: Record<AgentName, (prompt: string, extra: readonly string[]) => readonly string[]> = {
+const WRITABLE_SOURCE: Record<HostName, (prompt: string, extra: readonly string[]) => readonly string[]> = {
   claude: (p) => ["-p", "--output-format", "json", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--model", "haiku", p],
   codex: (p, extra) => ["exec", "--json", "--skip-git-repo-check", "-c", 'sandbox_mode="workspace-write"', ...extra, p],
   grok: (p) => ["--single", p, "--output-format", "streaming-messages-json", "--disallowed-tools", "search_tool,use_tool", "--always-approve"],
 };
 
-function transcriptOf(agent: AgentName, sessionId: string): string | undefined {
+function transcriptOf(agent: HostName, sessionId: string): string | undefined {
   if (agent === "claude") return systemIdentityDeps(run).claudeTranscript(sessionId);
   if (agent === "codex") {
     const sessionsDir = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions");
@@ -92,7 +94,7 @@ function transcriptOf(agent: AgentName, sessionId: string): string | undefined {
 }
 
 describe.skipIf(!live)("live session forks", () => {
-  it.each(AGENTS)("%s fork knows the source conversation, cannot write, and leaves the source untouched", { timeout: 600_000 }, async (agent) => {
+  it.each(HOSTS)("%s fork knows the source conversation, cannot write, and leaves the source untouched", { timeout: 600_000 }, async (agent) => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "consult-fork-")));
     const extra = agent === "codex" ? await codex.prepare!(run, dir) : [];
     const started = await run(agent, WRITABLE_SOURCE[agent](REMEMBER, extra), { cwd: dir, timeoutMs: 600_000 });

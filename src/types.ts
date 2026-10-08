@@ -1,5 +1,9 @@
-export const AGENTS = ["claude", "codex", "grok"] as const;
+export const AGENTS = ["claude", "codex", "grok", "agy"] as const;
 export type AgentName = (typeof AGENTS)[number];
+
+/** CLIs consult registers with as an MCP server, and whose live sessions it can fork. */
+export const HOSTS = ["claude", "codex", "grok"] as const;
+export type HostName = (typeof HOSTS)[number];
 
 /** Session ids reach CLI argv after `--resume`; a leading `-` could be parsed as a flag. */
 export const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*$/;

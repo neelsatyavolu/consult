@@ -2,13 +2,13 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { AGENTS, SESSION_ID_PATTERN } from "../types.js";
+import { HOSTS, SESSION_ID_PATTERN } from "../types.js";
 
 const entrySchema = z.object({
   version: z.literal(1),
   /** The consult server's pid; it names the file and tells readers whether the entry is stale. */
   pid: z.number().int().positive(),
-  agent: z.enum(AGENTS),
+  agent: z.enum(HOSTS),
   sessionId: z.string().regex(SESSION_ID_PATTERN),
   cwd: z.string().min(1),
   repoKey: z.string().min(1),

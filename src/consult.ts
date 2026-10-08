@@ -8,6 +8,7 @@ import {
   type AskRequest,
   type AskResult,
   type Effort,
+  type HostName,
   type Invocation,
   type Runner,
   type RunResult,
@@ -59,7 +60,7 @@ export function assertExitedCleanly(agent: AgentName, res: RunResult, timeoutMs:
 
 /** A live session to fork: the CLI that owns it, its id, and the directory it runs in. */
 export interface ForkTarget {
-  readonly agent: AgentName;
+  readonly agent: HostName;
   readonly sessionId: string;
   readonly cwd: string;
 }
@@ -93,7 +94,7 @@ export function createConsult({ run, adapters, timeoutMs }: ConsultDeps) {
     return { agent: adapter.name, ...adapter.parse(stdout), durationMs: Date.now() - started };
   }
 
-  /** `onUpdate` receives one-line progress updates for CLIs that stream their work (codex, grok). */
+  /** `onUpdate` receives one-line progress updates for CLIs that stream their work (codex, grok, agy). */
   async function ask(request: AskRequest, signal?: AbortSignal, onUpdate?: (text: string) => void): Promise<AskResult> {
     const adapter = adapters[request.agent];
     const prompt = framePrompt(request.question, Boolean(request.sessionId));

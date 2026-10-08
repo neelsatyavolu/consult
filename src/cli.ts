@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { agy } from "./adapters/agy.js";
 import { claude } from "./adapters/claude.js";
 import { codex, codexWorker } from "./adapters/codex.js";
 import { grok, grokWorker } from "./adapters/grok.js";
@@ -18,7 +19,7 @@ import { assertNotLiveSession } from "./sessions/service.js";
 import { sessionTools } from "./sessions/wire.js";
 import { createTaskManager } from "./tasks.js";
 import { chooseInstallMode, isInteractive, parseSessionsFlag, promptSessionsMode, runSettings } from "./tui.js";
-import { AGENTS, EFFORTS, SESSION_ID_PATTERN, type AgentName, type Effort } from "./types.js";
+import { AGENTS, EFFORTS, HOSTS, SESSION_ID_PATTERN, type AgentName, type Effort } from "./types.js";
 import { VERSION } from "./version.js";
 
 const DEFAULT_TIMEOUT_SEC = 900;
@@ -65,7 +66,7 @@ const refuseLive = (sessionId: string | undefined): void => {
   if (sessionId) assertNotLiveSession(sessionId, listLive(registryDir()));
 };
 
-const consult = () => createConsult({ run, adapters: { claude, codex, grok }, timeoutMs: timeoutMs() });
+const consult = () => createConsult({ run, adapters: { claude, codex, grok, agy }, timeoutMs: timeoutMs() });
 
 // Advisors and workers run in their own process groups, so they would outlive the server. Stop them when the host
 // disconnects or signals us.
@@ -156,7 +157,7 @@ async function askCommand(argv: readonly string[]): Promise<void> {
   process.stderr.write(`\n[${result.agent}${result.model ? ` ${result.model}` : ""} · session ${result.sessionId} · ${(result.durationMs / 1000).toFixed(1)}s]\n`);
 }
 
-const installedAgents = () => AGENTS.filter((agent) => findOnPath(agent, process.env.PATH ?? ""));
+const installedHosts = () => HOSTS.filter((agent) => findOnPath(agent, process.env.PATH ?? ""));
 
 const scriptPath = () => realpathSync(fileURLToPath(import.meta.url));
 const searchPath = () => process.env.PATH ?? "";
@@ -200,7 +201,7 @@ async function main(argv: readonly string[]): Promise<void> {
     case "install": {
       const { values } = parseArgs({ args: [...rest], options: { sessions: { type: "string" } } });
       const flag = parseSessionsFlag(values.sessions);
-      if (report(await install(run, serverCommand(scriptPath(), searchPath()), installedAgents()))) {
+      if (report(await install(run, serverCommand(scriptPath(), searchPath()), installedHosts()))) {
         await configureSessions(flag);
         process.stdout.write("Restart running agent sessions to pick up the new tools.\n");
       } else if (flag) {
@@ -217,7 +218,7 @@ async function main(argv: readonly string[]): Promise<void> {
       await runSettings({
         load: () => loadSettings(path),
         save: (settings) => saveSettings(path, settings),
-        installed: installedAgents(),
+        installed: installedHosts(),
         isRegistered: (agent) => isRegistered(run, agent),
         register: (agents) => install(run, cmd, agents),
         unregister: (agents) => uninstall(run, agents),
@@ -225,7 +226,7 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
     case "uninstall":
-      report(await uninstall(run, installedAgents()));
+      report(await uninstall(run, installedHosts()));
       return;
     case "--version":
     case "-v":

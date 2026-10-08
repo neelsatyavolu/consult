@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { AGENTS, SESSION_ID_PATTERN, type AgentName, type Runner } from "../types.js";
+import { HOSTS, SESSION_ID_PATTERN, type HostName, type Runner } from "../types.js";
 
 export interface ProcessInfo {
   readonly pid: number;
@@ -10,7 +10,7 @@ export interface ProcessInfo {
 
 /** The agent CLI that started this server. `pid` is missing when it was recognised only by its environment. */
 export interface Host {
-  readonly agent: AgentName;
+  readonly agent: HostName;
   readonly pid?: number;
 }
 
@@ -37,7 +37,7 @@ const ROLLOUT = /\/sessions\/(?:.*\/)?rollout-[^/]*-([0-9a-f]{8}-[0-9a-f]{4}-[0-
 
 const GROK_EVENTS = /\/\.grok\/sessions\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/events\.jsonl$/;
 
-const isAgent = (name: string): name is AgentName => (AGENTS as readonly string[]).includes(name);
+const isAgent = (name: string): name is HostName => (HOSTS as readonly string[]).includes(name);
 
 /**
  * The nearest agent CLI among this server's ancestors. An agent started from another agent's terminal inherits
@@ -46,7 +46,7 @@ const isAgent = (name: string): name is AgentName => (AGENTS as readonly string[
  */
 export async function detectHost(deps: IdentityDeps): Promise<Host | undefined> {
   const nearest = (await deps.ancestors()).find((p) => isAgent(p.name));
-  if (nearest) return { agent: nearest.name as AgentName, pid: nearest.pid };
+  if (nearest) return { agent: nearest.name as HostName, pid: nearest.pid };
   return deps.env.CLAUDE_CODE_SESSION_ID ? { agent: "claude" } : undefined;
 }
 

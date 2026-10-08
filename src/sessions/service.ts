@@ -1,6 +1,6 @@
 import type { ForkTarget } from "../consult.js";
 import type { Settings } from "../settings.js";
-import { AdvisorError, type AgentName, type AskResult, type Effort } from "../types.js";
+import { AdvisorError, type AskResult, type Effort, type HostName } from "../types.js";
 import type { SessionDetails } from "./describe.js";
 import type { SessionEntry } from "./registry.js";
 import { inScope } from "./scope.js";
@@ -14,7 +14,7 @@ export interface Self {
 /** What list_sessions shows about a session: metadata only. */
 export interface SessionView {
   readonly session_id: string;
-  readonly agent: AgentName;
+  readonly agent: HostName;
   readonly cwd: string;
   readonly branch?: string;
   readonly title?: string;

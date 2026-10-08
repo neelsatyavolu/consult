@@ -27,6 +27,8 @@ function knownModels(agent: AgentName): readonly string[] | undefined {
     const cache = readJson(join(homedir(), ".codex", "models_cache.json")) as { models?: { slug?: string }[] } | undefined;
     return cache?.models?.flatMap((m) => (m.slug ? [m.slug] : []));
   }
+  // agy keeps no model cache on disk; `agy models` lists them over the network.
+  if (agent === "agy") return undefined;
   const cache = readJson(join(homedir(), ".grok", "models_cache.json")) as { models?: Record<string, unknown> } | undefined;
   return cache?.models ? Object.keys(cache.models) : undefined;
 }

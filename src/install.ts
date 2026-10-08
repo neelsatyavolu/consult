@@ -2,7 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { codexConfigPath, editConfig, isCodexRegistered } from "./codex-config.js";
-import { AGENTS, type AgentName, type Runner } from "./types.js";
+import { AGENTS, HOSTS, type HostName, type Runner } from "./types.js";
 
 const SYSTEM_PATH = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
 
@@ -107,7 +107,7 @@ async function unregisterFromCli(run: Runner, agent: "claude" | "grok"): Promise
 const GROK_ENTRY = new RegExp(`^\\s*${SERVER_NAME}:`, "m");
 
 /** Whether consult is currently registered with this CLI. */
-export async function isRegistered(run: Runner, agent: AgentName, codexPath: string = codexConfigPath()): Promise<boolean> {
+export async function isRegistered(run: Runner, agent: HostName, codexPath: string = codexConfigPath()): Promise<boolean> {
   switch (agent) {
     case "claude":
       return (await run("claude", ["mcp", "get", SERVER_NAME], CLI_OPTS)).code === 0;
@@ -121,18 +121,18 @@ export async function isRegistered(run: Runner, agent: AgentName, codexPath: str
 }
 
 export interface InstallResult {
-  readonly agent: AgentName;
+  readonly agent: HostName;
   readonly ok: boolean;
   readonly message: string;
 }
 
 /** Runs one step per installed CLI. One CLI failing does not stop the others. */
 async function forEachInstalled(
-  installed: readonly AgentName[],
-  steps: Record<AgentName, () => Promise<string> | string>,
+  installed: readonly HostName[],
+  steps: Record<HostName, () => Promise<string> | string>,
 ): Promise<readonly InstallResult[]> {
   const results: InstallResult[] = [];
-  for (const agent of AGENTS) {
+  for (const agent of HOSTS) {
     if (!installed.includes(agent)) {
       results.push({ agent, ok: true, message: `${agent}: not installed, skipped` });
       continue;
@@ -147,7 +147,7 @@ async function forEachInstalled(
 }
 
 /** Registers the consult MCP server with each installed CLI, replacing any earlier registration. */
-export function install(run: Runner, cmd: ServerCommand, installed: readonly AgentName[]): Promise<readonly InstallResult[]> {
+export function install(run: Runner, cmd: ServerCommand, installed: readonly HostName[]): Promise<readonly InstallResult[]> {
   return forEachInstalled(installed, {
     claude: () => registerWithCli(run, "claude", cmd),
     codex: () => registerCodex(cmd, codexConfigPath()),
@@ -156,7 +156,7 @@ export function install(run: Runner, cmd: ServerCommand, installed: readonly Age
 }
 
 /** Removes the consult MCP server from each installed CLI. */
-export function uninstall(run: Runner, installed: readonly AgentName[]): Promise<readonly InstallResult[]> {
+export function uninstall(run: Runner, installed: readonly HostName[]): Promise<readonly InstallResult[]> {
   return forEachInstalled(installed, {
     claude: () => unregisterFromCli(run, "claude"),
     codex: () => unregisterCodex(codexConfigPath()),

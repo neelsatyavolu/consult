@@ -9,7 +9,7 @@ import {
   type SessionsMode,
   type Settings,
 } from "./settings.js";
-import type { AgentName } from "./types.js";
+import type { HostName } from "./types.js";
 
 const MODE_OPTIONS = [
   { value: "off", label: "Off", hint: "default: agents can't see each other's sessions" },
@@ -43,14 +43,14 @@ export async function chooseInstallMode(opts: {
 
 export interface SettingsPlan {
   readonly settings: Settings;
-  readonly register: readonly AgentName[];
-  readonly unregister: readonly AgentName[];
+  readonly register: readonly HostName[];
+  readonly unregister: readonly HostName[];
 }
 
 export function planSettings(
   current: Settings,
-  registered: readonly AgentName[],
-  chosen: { readonly mode: SessionsMode; readonly tasks: boolean; readonly hosts: readonly AgentName[] },
+  registered: readonly HostName[],
+  chosen: { readonly mode: SessionsMode; readonly tasks: boolean; readonly hosts: readonly HostName[] },
 ): SettingsPlan {
   return {
     settings: withTasksEnabled(withSessionsMode(current, chosen.mode), chosen.tasks),
@@ -73,10 +73,10 @@ export interface SettingsIo {
   /** Throws SettingsError when the file is invalid. */
   readonly load: () => Settings;
   readonly save: (settings: Settings) => void;
-  readonly installed: readonly AgentName[];
-  readonly isRegistered: (agent: AgentName) => Promise<boolean>;
-  readonly register: (agents: readonly AgentName[]) => Promise<readonly InstallResult[]>;
-  readonly unregister: (agents: readonly AgentName[]) => Promise<readonly InstallResult[]>;
+  readonly installed: readonly HostName[];
+  readonly isRegistered: (agent: HostName) => Promise<boolean>;
+  readonly register: (agents: readonly HostName[]) => Promise<readonly InstallResult[]>;
+  readonly unregister: (agents: readonly HostName[]) => Promise<readonly InstallResult[]>;
 }
 
 async function loadOrReset(io: SettingsIo): Promise<Settings | undefined> {

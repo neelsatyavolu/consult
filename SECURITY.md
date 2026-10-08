@@ -8,7 +8,7 @@ Please report security problems privately through [GitHub's private vulnerabilit
 
 consult starts other agent CLIs as advisors and, if you turn task dispatch on, as workers. It never handles API keys: each advisor uses the account its CLI is already signed in to.
 
-**Advisors can't change anything.** Each advisor runs headless, gets only read-only tools and has no MCP servers. The exact flags are in the [README](README.md#how-advisors-are-contained). Without MCP servers an advisor can't call consult again, so advisors can't consult each other in a loop.
+**Advisors can't change anything.** Each advisor runs headless, gets only read-only tools and has no MCP servers. The exact flags are in the [README](README.md#how-advisors-are-contained). agy (Antigravity) has no such flags, so its containment comes from its own settings file: consult checks that config, including hooks and repository-level customizations, before every call and refuses to run agy if it isn't read-only and MCP-free. Without MCP servers an advisor can't call consult again, so advisors can't consult each other in a loop.
 
 **Advisors can read, and what they read goes to their provider.** An advisor reads files in the working directory (`cwd`) and sends them to its own model provider, as it would if you ran that CLI yourself. Don't point an advisor at a directory holding secrets you wouldn't paste into that CLI. How far reads reach depends on the CLI:
 
@@ -17,6 +17,7 @@ consult starts other agent CLIs as advisors and, if you turn task dispatch on, a
 | claude | `--restricted` confines its file tools to `cwd` |
 | codex | runs commands in its read-only sandbox (no writes, no network), which can read outside `cwd` |
 | grok | only has the `read_file`, `grep` and `list_dir` tools. Grok's kernel sandbox isn't used (see the README), so reads aren't confined to `cwd` |
+| agy | runs only when its own config makes headless agy deny writes, shell commands and URL fetches (`toolPermission` `request-review` or `strict`, no allow rules, no MCP servers, plugins or hooks, and no workspace `.agents` directories), checked before each call. This rests on agy's own permission checks rather than an OS sandbox. Reads can reach outside `cwd`, and web search queries go to Google |
 
 **Treat advice as untrusted input.** Repository content can carry prompt injection, and an advisor's answer goes straight back to the agent that asked. The server instructions tell host agents to verify advice before acting on it. Your host agent's own permission prompts still apply to anything it does next.
 

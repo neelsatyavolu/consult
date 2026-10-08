@@ -19,7 +19,7 @@ function fakeAdapter(name: AgentName, overrides: Partial<Adapter> = {}): Adapter
 }
 
 function setup(run: Runner, adapter: Adapter = fakeAdapter("codex")) {
-  const adapters = { claude: fakeAdapter("claude"), codex: fakeAdapter("codex"), grok: fakeAdapter("grok"), [adapter.name]: adapter };
+  const adapters = { claude: fakeAdapter("claude"), codex: fakeAdapter("codex"), grok: fakeAdapter("grok"), agy: fakeAdapter("agy"), [adapter.name]: adapter };
   return createConsult({ run, adapters, timeoutMs: 1000 });
 }
 

@@ -2,7 +2,7 @@
 
 **Let your coding agents get a second opinion.**
 
-consult is an MCP server that lets Claude Code, Codex and Grok ask each other for advice through the CLIs already signed in on your machine. No API keys: each advisor runs on the subscription its CLI already uses.
+consult is an MCP server that lets Claude Code, Codex and Grok ask each other, and Google's Antigravity CLI, for advice through the CLIs already signed in on your machine. No API keys: each advisor runs on the subscription its CLI already uses.
 
 Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once. With [task dispatch](#task-dispatch) on, an agent can also hand a coding task to a Codex or Grok worker and follow its progress.
 
@@ -15,6 +15,8 @@ npx -y consult-mcp@latest install
 ```
 
 This registers consult with every agent CLI it finds on your `PATH` (`claude`, `codex`, `grok`), at user scope. Restart running agent sessions afterwards.
+
+Antigravity (`agy`) is an advisor only. consult doesn't register itself with agy, because agy can only be kept read-only with no MCP servers enabled ([details](#how-advisors-are-contained)). If you install agy after consult, re-run `install` so the server's `PATH` includes it.
 
 **It stays up to date.** Hosts launch the server with `npx -y consult-mcp@latest serve`, so each new agent session runs the latest release. Re-running `install` is safe: it replaces an existing registration, including ones written by older versions.
 
@@ -42,8 +44,8 @@ To pin to a specific build instead of following `@latest`, install globally with
 
 **`ask_agent`** `{agent, question, model?, effort?, session_id?, cwd?}` returns `{agent, answer, session_id, model?, duration_ms}`.
 
-- `agent`: `claude`, `codex` or `grok`.
-- `model`: passed through to that CLI (`opus`, `gpt-6-astra`, `grok-4.7`, …). Omit it to use the CLI's default.
+- `agent`: `claude`, `codex`, `grok` or `agy` (Antigravity, Gemini models).
+- `model`: passed through to that CLI (`opus`, `gpt-6-astra`, `grok-4.7`, `gemini-3.1-pro-high`, …). Omit it to use the CLI's default.
 - `effort`: `low`, `medium` or `high`.
 - `session_id`: continues an earlier conversation with the same advisor.
 - `cwd`: the directory the advisor can read. Defaults to the directory the host agent started the server in, which is normally its repo.
@@ -118,6 +120,16 @@ Every advisor runs headless and read-only, and has no MCP servers. So an advisor
 | claude | `-p --restricted --tools Read,Grep,Glob --strict-mcp-config` |
 | codex | `exec`, `sandbox_mode="read-only"`, `approval_policy="never"`, plugins off, and every enabled MCP server disabled by name (Codex runs MCP tools outside its sandbox) |
 | grok | `--tools read_file,grep,list_dir --disallowed-tools Agent,search_tool,use_tool` (the MCP helper tools can reach servers that write files) |
+| agy | `-p --output-format stream-json --disable-slash-commands`, only after a check of agy's own config (below) |
+
+agy has no flags to restrict its tools or switch off MCP servers (`--mode plan` and `--sandbox` leave write, shell, browser and MCP tools on), so before every call consult checks the config agy will use and refuses to run it unless:
+
+- `toolPermission` in `~/.gemini/antigravity-cli/settings.json` is `request-review` (the default) or `strict`. Writes, shell commands and URL fetches then need approval, which headless mode can't ask for, so agy denies them. `always-proceed` and `proceed-in-sandbox` are refused. `strict` denies file reads too, which leaves agy unable to answer most questions.
+- `permissions.allow` in that file is empty, since allow rules let commands run without approval.
+- `agy mcp list` shows no enabled server, and `agy plugin list` shows no plugins (plugins bring their own MCP servers).
+- No hooks or plugins can load: `~/.gemini/config/hooks.json` and `plugins.json` are missing or empty, `~/.gemini/config/plugins/` and `~/.gemini/antigravity-cli/plugins/` are empty, and there is no `.agents`, `.agent`, `_agents` or `_agent` directory from `cwd` up to the repository root. Hooks run commands, and a hook can approve any tool call, which would get around the permission check.
+
+The error says what to change. agy is also told to use only its file tools: when a tool is denied it ends the turn without an answer, and consult then reports which tool was denied. Its web search tool is not blocked, so search queries go to Google, the same provider that already receives the question. agy can't fork sessions, so it has no live sessions or task dispatch. Resume with `session_id` works through `--conversation`, but agy starts a new conversation if the id is unknown; the reply's `session_id` then differs from the one you passed.
 
 `ask_session` copies use the same flags, plus `--resume <id> --fork-session` (claude, grok) or `exec fork <id>` (codex), so the live session's own transcript is only read.
 
