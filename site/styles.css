@@ -19,6 +19,7 @@
   --claude: #f2a36e;
   --codex: #7fc3ff;
   --grok: #c4b5fd;
+  --agy: #7fd6a0;
 
   --wrap: 1120px;
   --gutter: clamp(16px, 4vw, 40px);
@@ -38,6 +39,7 @@
     --claude: #b1521b;
     --codex: #0b6bb8;
     --grok: #6242d6;
+    --agy: #1a7a45;
   }
 }
 
@@ -235,6 +237,10 @@ h1 {
 
 .who-grok {
   color: var(--grok);
+}
+
+.who-agy {
+  color: var(--agy);
 }
 
 .command {

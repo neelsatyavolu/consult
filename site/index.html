@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>consult — a second opinion for your coding agents</title>
-  <meta name="description" content="An open-source MCP server that lets Claude Code, Codex and Grok ask each other for advice through the CLIs you're already signed in to, including the sessions you already have running. No API keys.">
+  <meta name="description" content="An open-source MCP server that lets Claude Code, Codex and Grok ask each other, and Google's Antigravity, for advice through the CLIs you're already signed in to, including the sessions you already have running. No API keys.">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <link rel="canonical" href="https://consult.n3el.dev/">
   <meta property="og:title" content="consult — a second opinion for your coding agents">
-  <meta property="og:description" content="Claude Code, Codex and Grok ask each other for advice through the CLIs you're already signed in to. Read-only, no API keys, one command to install.">
+  <meta property="og:description" content="Claude Code, Codex and Grok ask each other, and Antigravity, for advice through the CLIs you're already signed in to. Read-only, no API keys, one command to install.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://consult.n3el.dev/">
   <meta property="og:image" content="https://consult.n3el.dev/assets/og.png">
@@ -52,7 +52,7 @@
     <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
         <h1 id="hero-title">Let your coding agents get a second opinion.</h1>
-        <p class="lede">consult is an MCP server that lets <span class="who who-claude">Claude Code</span>, <span class="who who-codex">Codex</span> and <span class="who who-grok">Grok</span> ask each other for advice, through the CLIs you’re already signed in to. No API keys. It runs on the subscriptions you already have.</p>
+        <p class="lede">consult is an MCP server that lets <span class="who who-claude">Claude Code</span>, <span class="who who-codex">Codex</span> and <span class="who who-grok">Grok</span> ask each other, and <span class="who who-agy">Antigravity</span>, for advice through the CLIs you’re already signed in to. No API keys. It runs on the subscriptions you already have.</p>
 
         <div class="command" data-copy-wrap>
           <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest install</code>
@@ -122,7 +122,7 @@
         </div>
         <div class="tool">
           <dt><code><span class="fn">ask_agents</span>(agents[], question, effort?, cwd?)</code></dt>
-          <dd>Ask a panel. Two or three advisors work in parallel and their answers come back side by side, so you can see where they agree and where they don’t.</dd>
+          <dd>Ask a panel. Two or more advisors work in parallel and their answers come back side by side, so you can see where they agree and where they don’t.</dd>
         </div>
         <div class="tool">
           <dt><code><span class="fn">list_agents</span>()</code></dt>
@@ -235,6 +235,10 @@
               <th scope="row"><span class="who who-grok">grok</span></th>
               <td><code>--tools read_file,grep,list_dir</code>, with the MCP helper tools disallowed</td>
             </tr>
+            <tr>
+              <th scope="row"><span class="who who-agy">agy</span></th>
+              <td><code>-p</code>, only after checking agy’s own settings before every call: writes, shell commands and URL fetches must need approval (so headless agy denies them), with no MCP servers, plugins or hooks</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -245,7 +249,7 @@
     <section id="install" class="section wrap" aria-labelledby="install-title">
       <div class="section-head">
         <h2 id="install-title">Install</h2>
-        <p>You need Node 22 or later on macOS or Linux, and at least one of the <code>claude</code>, <code>codex</code> or <code>grok</code> CLIs, signed in.</p>
+        <p>You need Node 22 or later on macOS or Linux, and at least one of the <code>claude</code>, <code>codex</code> or <code>grok</code> CLIs, signed in. Antigravity’s <code>agy</code> joins as an advisor when it’s installed too.</p>
       </div>
 
       <ol class="steps">
