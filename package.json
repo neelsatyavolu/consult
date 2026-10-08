@@ -1,6 +1,6 @@
 {
   "name": "consult-mcp",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "MCP server that lets Claude Code, Codex and Grok ask each other for a second opinion through the CLIs already signed in on your machine",
   "keywords": [
     "mcp",
