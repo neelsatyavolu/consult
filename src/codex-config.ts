@@ -63,9 +63,16 @@ function withoutConsult(config: Toml): Toml {
 
 const hasConsult = (config: Toml) => CODEX_SERVER in ((config.mcp_servers as Toml | undefined) ?? {});
 
-/** Whether the codex config has a consult entry. A missing file means not registered. */
+/**
+ * Whether the codex config has a consult entry. A missing, unreadable, or unparseable file means not
+ * registered: `consult settings` checks this for every installed CLI, and a broken config must not abort it.
+ */
 export function isCodexRegistered(path: string): boolean {
-  return existsSync(path) && hasConsult(parseConfig(readFileSync(path, "utf8"), path));
+  try {
+    return existsSync(path) && hasConsult(parseConfig(readFileSync(path, "utf8"), path));
+  } catch {
+    return false;
+  }
 }
 
 function writeAtomically(path: string, text: string): void {

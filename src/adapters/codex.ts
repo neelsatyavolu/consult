@@ -16,13 +16,38 @@ const WORKSPACE_WRITE = [
 // Codex runs MCP tools outside its shell sandbox, so advisors and workers get none: plugins are switched off
 // (they bring their own MCP servers) and every server still enabled is disabled by name.
 // That includes consult itself, which is what stops agents from consulting each other in a loop.
+// Names are interpolated into `-c` overrides, so only bare keys are accepted. The JSON list also includes
+// each server's env, so a parse failure must not echo stdout.
+const SAFE_MCP_NAME = /^[A-Za-z0-9_-]+$/;
+const MCP_LIST_UNREADABLE = "could not parse `codex mcp list --json`; refusing to run codex with its MCP servers still enabled";
+
 async function listEnabledMcpServers(run: Parameters<NonNullable<Adapter["prepare"]>>[0], cwd: string, signal?: AbortSignal) {
   const res = await run("codex", ["mcp", "list", "--json", ...PLUGINS_OFF], { cwd, timeoutMs: 30_000, signal });
-  if (res.code !== 0) {
-    throw new AdvisorError(`could not list codex MCP servers to disable them: ${res.stderr.trim().slice(-500)}`);
+  if (res.stopped || res.code !== 0) {
+    const detail = res.stderr.trim().slice(-500) || res.stopped || "exited unsuccessfully";
+    throw new AdvisorError(`could not list codex MCP servers to disable them: ${detail}`);
   }
-  const servers = JSON.parse(res.stdout) as { name: string; enabled: boolean }[];
-  return servers.filter((s) => s.enabled).map((s) => s.name);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(res.stdout);
+  } catch {
+    throw new AdvisorError(MCP_LIST_UNREADABLE);
+  }
+  if (!Array.isArray(parsed)) throw new AdvisorError(MCP_LIST_UNREADABLE);
+  const names: string[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null || typeof (entry as { name?: unknown }).name !== "string") {
+      throw new AdvisorError(MCP_LIST_UNREADABLE);
+    }
+    const { name, enabled } = entry as { name: string; enabled?: unknown };
+    if (enabled !== true) continue;
+    if (!SAFE_MCP_NAME.test(name)) {
+      const shown = name.length > 80 ? `${name.slice(0, 80)}…` : name;
+      throw new AdvisorError(`cannot safely disable codex MCP server ${JSON.stringify(shown)}; disable or rename it before consulting codex`);
+    }
+    names.push(name);
+  }
+  return names;
 }
 
 const prepare: NonNullable<Adapter["prepare"]> = async (run, cwd, signal) => {

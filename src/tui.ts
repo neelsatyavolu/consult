@@ -93,7 +93,15 @@ export async function runSettings(io: SettingsIo): Promise<void> {
   intro("consult settings");
   const current = await loadOrReset(io);
   if (!current) return cancel("Left settings unchanged.");
-  const registered = (await Promise.all(io.installed.map(async (agent) => ((await io.isRegistered(agent)) ? [agent] : [])))).flat();
+  const registered: HostName[] = [];
+  for (const agent of io.installed) {
+    try {
+      if (await io.isRegistered(agent)) registered.push(agent);
+    } catch (err) {
+      // One CLI failing its probe must not abort the wizard; the user can still change the other settings.
+      log.warn(`${agent}: ${errorMessage(err)}`);
+    }
+  }
 
   const mode = await promptSessionsMode(sessionsMode(current));
   if (mode === undefined) return cancel("No changes made.");
