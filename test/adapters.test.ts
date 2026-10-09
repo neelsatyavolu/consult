@@ -4,7 +4,7 @@ import { claude } from "../src/adapters/claude.js";
 import { codex, codexWorker } from "../src/adapters/codex.js";
 import { grok, grokWorker } from "../src/adapters/grok.js";
 import { parseJsonLines } from "../src/jsonl.js";
-import type { AskRequest, RunResult, TaskRequest, Worker } from "../src/types.js";
+import { AdvisorError, type AskRequest, type RunResult, type TaskRequest, type Worker } from "../src/types.js";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -111,6 +111,36 @@ describe("codex adapter", () => {
   it("refuses to run when the MCP server list cannot be read", async () => {
     const fakeRun = async (): Promise<RunResult> => ({ stdout: "", stderr: "boom", code: 1 });
     await expect(codex.prepare!(fakeRun, "/repo")).rejects.toThrow(/boom/);
+  });
+
+  it("refuses to run when the MCP server list is not a JSON list, without echoing it", async () => {
+    const secret = "super-secret-token";
+    const fakeRun = async (): Promise<RunResult> => ({ stdout: `{"env":"${secret}"}`, stderr: "", code: 0 });
+    await expect(codex.prepare!(fakeRun, "/repo")).rejects.toThrow(/could not parse/);
+    await expect(codex.prepare!(fakeRun, "/repo")).rejects.not.toThrow(new RegExp(secret));
+    const textRun = async (): Promise<RunResult> => ({ stdout: "not json", stderr: "", code: 0 });
+    await expect(codex.prepare!(textRun, "/repo")).rejects.toThrow(AdvisorError);
+  });
+
+  it("disables only enabled servers and refuses a name that cannot be passed safely", async () => {
+    const ok = async (): Promise<RunResult> => ({
+      stdout: JSON.stringify([
+        { name: "context7", enabled: true },
+        { name: "bad name", enabled: false },
+        { name: "off", enabled: false },
+      ]),
+      stderr: "",
+      code: 0,
+    });
+    const args = await codex.prepare!(ok, "/repo");
+    expect(args).toEqual(["-c", "features.plugins=false", "-c", "mcp_servers.context7.enabled=false"]);
+
+    const unsafe = async (): Promise<RunResult> => ({
+      stdout: JSON.stringify([{ name: 'evil"\n-c sandbox_mode="danger-full-access"', enabled: true }]),
+      stderr: "",
+      code: 0,
+    });
+    await expect(codex.prepare!(unsafe, "/repo")).rejects.toThrow(/cannot safely disable/);
   });
 });
 

@@ -258,6 +258,14 @@ describe("isRegistered", () => {
     expect(await isRegistered(run, "codex", config)).toBe(true);
   });
 
+  it("is false when the codex config cannot be parsed, instead of throwing", async () => {
+    const config = tmpConfig();
+    writeFileSync(config, "[[[ not toml");
+    const run = vi.fn<Runner>(async () => ({ stdout: "", stderr: "", code: 0 }));
+    await expect(isRegistered(run, "codex", config)).resolves.toBe(false);
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("is false when claude has no consult server or grok lists only similar names", async () => {
     const run = vi.fn<Runner>(async (cmd) =>
       cmd === "claude"
