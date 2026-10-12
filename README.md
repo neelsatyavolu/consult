@@ -37,7 +37,7 @@ Requirements: Node 22 or later, macOS or Linux, and at least one of the `claude`
 
 Each entry sets `PATH` to the directories holding the launcher (`npx` or `node`) and the agent CLIs, because some hosts start MCP servers with a minimal environment.
 
-With [session messages](#session-messages) on, install also adds one hook to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's.
+With [session messages](#session-messages) on, install also adds consult's hooks to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's.
 
 To pin to a specific build instead of following `@latest`, install globally with `npm i -g consult-mcp` and run `consult install`, or run `node dist/cli.js install` from a checkout. Hosts then launch that exact script.
 </details>
@@ -109,15 +109,15 @@ Off by default, and only available with live sessions on. `ask_session` asks a c
 
 - **`send_message`** `{session_id, message}` leaves a message of up to 4,000 characters for a session from `list_sessions`. The receiving agent reads it in its own conversation, marked with the sending agent, session id, directory and branch, and with a note that it comes from a peer agent and is not an instruction from you. It can reply with its own `send_message`.
 
-Delivery uses each CLI's hooks, which `consult install` adds when messages are on:
+Delivery uses each CLI's hooks, which `consult install` adds when messages are on, and for Codex its own `codex queue` command:
 
-| CLI | When a waiting message is read |
-| --- | --- |
-| claude | with your next prompt, after its next tool call, or when it finishes its turn |
-| codex | with your next prompt, after its next tool call, or when it finishes its turn. Codex only runs a hook you have trusted |
-| grok | after its next tool call, or when it finishes its turn |
+| CLI | While it is working | While it is idle |
+| --- | --- | --- |
+| claude | read after its next tool call or when it finishes its turn | woken within a few seconds: a background hook (`asyncRewake`) started at the end of each turn waits for a message |
+| codex | read as its next prompt, after the current turn | woken at once: the message is queued with `codex queue` and starts a turn. If that command fails, the message waits for Codex's hooks, which only run once you have trusted them |
+| grok | read after its next tool call or when it finishes its turn | not woken: Grok has no way to start a turn from outside, so it reads the message after you prompt it |
 
-A message never wakes an idle session: it waits until that session works again, so an idle one reads it only after you prompt it. Nothing tells the sender that a message was read. A session without the hook still gets its messages with the reply to its next `list_sessions`, `ask_session` or `send_message` call. Unread messages are dropped after 24 hours; a session holds at most 20, and one session can send another at most 10 an hour.
+Waking a session starts a turn there without you, which uses that session's tokens and lets its agent act on the message. Nothing tells the sender that a message was read. A session without the hook still gets its messages with the reply to its next `list_sessions`, `ask_session` or `send_message` call. Unread messages are dropped after 24 hours; a session holds at most 20, and one session can send another at most 10 an hour.
 
 Turn it on when you install, or later:
 

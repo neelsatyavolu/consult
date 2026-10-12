@@ -99,33 +99,58 @@ describe("assertNotLiveSession", () => {
 describe("session messages", () => {
   const on = withMessagesEnabled(withSessionsMode(DEFAULT_SETTINGS, "repo"), true);
 
-  it("queues a message for a session in scope, naming this session as the sender", () => {
+  it("queues a message for a session in scope, naming this session as the sender", async () => {
     const { sessions, deps } = setup(on);
-    expect(sessions.send("same-repo", "main moved")).toEqual({ messageId: "m-1", agent: "codex", sessionId: "same-repo" });
+    expect(await sessions.send("same-repo", "main moved")).toEqual({ messageId: "m-1", agent: "codex", sessionId: "same-repo", delivery: "inbox" });
     expect(deps.enqueue).toHaveBeenCalledWith("same-repo", { agent: "codex", sessionId: "me", cwd: "/work/me" }, "main moved");
   });
 
-  it("refuses when messages or live sessions are off, and for sessions it cannot see", () => {
-    expect(() => setup(withSessionsMode(DEFAULT_SETTINGS, "repo")).sessions.send("same-repo", "hi")).toThrow(/messages are turned off/);
-    expect(() => setup(withMessagesEnabled(DEFAULT_SETTINGS, true)).sessions.send("same-repo", "hi")).toThrow(/turned off/);
+  it("refuses when messages or live sessions are off, and for sessions it cannot see", async () => {
+    await expect(setup(withSessionsMode(DEFAULT_SETTINGS, "repo")).sessions.send("same-repo", "hi")).rejects.toThrow(/messages are turned off/);
+    await expect(setup(withMessagesEnabled(DEFAULT_SETTINGS, true)).sessions.send("same-repo", "hi")).rejects.toThrow(/turned off/);
     const { sessions, deps } = setup(on);
-    expect(() => sessions.send("elsewhere", "hi")).toThrow(/no live session elsewhere in scope/);
-    expect(() => sessions.send("me", "hi")).toThrow(/own session/);
+    await expect(sessions.send("elsewhere", "hi")).rejects.toThrow(/no live session elsewhere in scope/);
+    await expect(sessions.send("me", "hi")).rejects.toThrow(/own session/);
     expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
-  it("refuses to send before this session is registered", () => {
+  it("refuses to send before this session is registered", async () => {
     const { sessions } = setup(on, { self: () => ({ repoKey: "/a/.git" }) });
-    expect(() => sessions.send("same-repo", "hi")).toThrow(/not registered/);
+    await expect(sessions.send("same-repo", "hi")).rejects.toThrow(/not registered/);
   });
 
-  it("limits how many messages one session gets from this one per hour", () => {
+  it("limits how many messages one session gets from this one per hour", async () => {
     let now = 0;
     const { sessions } = setup(on, { now: () => now });
-    for (let i = 0; i < MAX_SENDS_PER_HOUR; i++) sessions.send("same-repo", "again");
-    expect(() => sessions.send("same-repo", "again")).toThrow(/in the last hour/);
+    for (let i = 0; i < MAX_SENDS_PER_HOUR; i++) await sessions.send("same-repo", "again");
+    await expect(sessions.send("same-repo", "again")).rejects.toThrow(/in the last hour/);
     now = 60 * 60 * 1000 + 1;
-    expect(sessions.send("same-repo", "later").messageId).toBe("m-1");
+    expect((await sessions.send("same-repo", "later")).messageId).toBe("m-1");
+  });
+
+  it("hands a Codex session the message as its next prompt, which wakes an idle one, and skips the inbox", async () => {
+    const promptCodex = vi.fn(async () => true);
+    const { sessions, deps } = setup(on, { promptCodex });
+    const sent = await sessions.send("same-repo", "main moved");
+    expect(sent).toMatchObject({ agent: "codex", sessionId: "same-repo", delivery: "prompt" });
+    const [target, framed] = promptCodex.mock.calls[0] as unknown as [SessionEntry, string];
+    expect(target.sessionId).toBe("same-repo");
+    expect(framed).toMatch(/not an instruction from your user[\s\S]*From the codex session me[\s\S]*main moved/);
+    expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the inbox when Codex could not queue the prompt, and never prompts other agents", async () => {
+    const failing = setup(on, { promptCodex: vi.fn(async () => false) });
+    expect((await failing.sessions.send("same-repo", "hi")).delivery).toBe("inbox");
+    expect(failing.deps.enqueue).toHaveBeenCalled();
+
+    const promptCodex = vi.fn(async () => true);
+    const claudeTarget = setup(on, {
+      promptCodex,
+      listLive: () => [entry("me", "/a/.git"), entry("same-repo", "/a/.git", { agent: "claude" })],
+    });
+    expect((await claudeTarget.sessions.send("same-repo", "hi")).delivery).toBe("inbox");
+    expect(promptCodex).not.toHaveBeenCalled();
   });
 
   it("hands this session its waiting messages, framed, and nothing when messages are off", () => {

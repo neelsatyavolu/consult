@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -45,6 +45,30 @@ function pendingFiles(box: string): readonly string[] {
   }
 }
 
+/** A half-written or half-claimed file this old was left by a process that died. */
+const LEFTOVER_MS = 60_000;
+
+/** Removes leftovers, which would otherwise keep an empty inbox looking as if it held a message. */
+function removeLeftovers(box: string, now: Date): void {
+  let names: string[];
+  try {
+    names = readdirSync(box);
+  } catch {
+    return;
+  }
+  for (const name of names.filter((n) => n.startsWith("."))) {
+    try {
+      if (now.getTime() - statSync(join(box, name)).mtimeMs > LEFTOVER_MS) rmSync(join(box, name), { force: true });
+    } catch {
+      // Gone already.
+    }
+  }
+}
+
+export function createMessage(from: Sender, text: string, now: Date = new Date()): Message {
+  return messageSchema.parse({ version: 1, id: randomUUID(), from, sentAt: now.toISOString(), text });
+}
+
 const expired = (message: Message, now: Date) => now.getTime() - Date.parse(message.sentAt) > MESSAGE_TTL_MS;
 
 /** Queues a message for a session. Its hook, or its next consult tool call, delivers it. */
@@ -53,7 +77,7 @@ export function enqueue(dir: string, recipient: string, from: Sender, text: stri
   if (pendingFiles(box).length >= MAX_PENDING) {
     throw new AdvisorError(`session ${recipient} already has ${MAX_PENDING} unread messages; wait until it has read them`);
   }
-  const message = messageSchema.parse({ version: 1, id: randomUUID(), from, sentAt: now.toISOString(), text });
+  const message = createMessage(from, text, now);
   const write = () => {
     mkdirSync(box, { recursive: true, mode: 0o700 });
     const tmp = join(box, `.${message.id}.tmp`);
@@ -93,6 +117,7 @@ export function claim(dir: string, sessionId: string, now: Date = new Date()): r
       rmSync(taken, { force: true });
     }
   });
+  removeLeftovers(box, now);
   try {
     rmdirSync(box);
   } catch {

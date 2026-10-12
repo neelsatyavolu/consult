@@ -9,6 +9,7 @@ import { listLive, registryDir } from "./registry.js";
 import { createSessions, type SessionsDeps } from "./service.js";
 
 const REFRESH_MS = 15_000;
+const CODEX_QUEUE_TIMEOUT_MS = 30_000;
 
 export interface WireOptions {
   readonly run: Runner;
@@ -59,6 +60,12 @@ export async function sessionTools(opts: WireOptions): Promise<SessionToolDeps |
       askFork: opts.askFork,
       enqueue: (recipient, from, text) => enqueue(inbox, recipient, from, text),
       claim: (sessionId) => claim(inbox, sessionId),
+      promptCodex: async (target, framed) => {
+        const res = await opts
+          .run("codex", ["queue", "--thread", target.sessionId, "--message", framed], { cwd: target.cwd, timeoutMs: CODEX_QUEUE_TIMEOUT_MS })
+          .catch(() => undefined);
+        return res?.code === 0;
+      },
     });
     return { list, ask, ...(settings.messages.enabled ? { messages: { send, receive } } : {}) };
   } catch (err) {

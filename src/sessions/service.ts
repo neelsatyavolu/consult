@@ -2,7 +2,7 @@ import type { ForkTarget } from "../consult.js";
 import { messagesOn, type Settings } from "../settings.js";
 import { AdvisorError, type AskResult, type Effort, type HostName } from "../types.js";
 import type { SessionDetails } from "./describe.js";
-import { frameMessages, type Message, type Sender } from "./inbox.js";
+import { createMessage, frameMessages, type Message, type Sender } from "./inbox.js";
 import type { SessionEntry } from "./registry.js";
 import { inScope } from "./scope.js";
 
@@ -39,6 +39,11 @@ export interface SessionsDeps {
   readonly askFork: (target: ForkTarget, question: string, effort: Effort | undefined, signal?: AbortSignal) => Promise<AskResult>;
   readonly enqueue: (recipient: string, from: Sender, text: string) => Message;
   readonly claim: (sessionId: string) => readonly Message[];
+  /**
+   * Hands the framed message to the session as its next prompt, which also wakes an idle one. Only Codex has a
+   * command for it. False when that did not work, so the message goes to the inbox instead.
+   */
+  readonly promptCodex?: (target: SessionEntry, framed: string) => Promise<boolean>;
   readonly now?: () => number;
 }
 
@@ -46,6 +51,8 @@ export interface Sent {
   readonly messageId: string;
   readonly agent: HostName;
   readonly sessionId: string;
+  /** `prompt`: queued as the session's next prompt. `inbox`: waiting for the session's hook. */
+  readonly delivery: "prompt" | "inbox";
 }
 
 /** Bounds two agents that keep answering each other. */
@@ -110,7 +117,7 @@ export function createSessions(deps: SessionsDeps) {
 
   let sends: ReadonlyMap<string, readonly number[]> = new Map();
 
-  function send(sessionId: string, text: string): Sent {
+  async function send(sessionId: string, text: string): Promise<Sent> {
     assertMessagesOn();
     const self = deps.self();
     const target = findTarget(self, sessionId);
@@ -122,9 +129,14 @@ export function createSessions(deps: SessionsDeps) {
       throw new AdvisorError(`you have sent session ${sessionId} ${MAX_SENDS_PER_HOUR} messages in the last hour; wait before sending more`);
     }
     const from = { agent: me.agent, sessionId: me.sessionId, cwd: me.cwd, ...(me.branch ? { branch: me.branch.slice(0, MAX_BRANCH) } : {}) };
-    const message = deps.enqueue(target.sessionId, from, text);
+    // Counted before sending, so a failed attempt still uses up one of the hour's sends.
     sends = new Map([...sends, [sessionId, [...recent, now]]]);
-    return { messageId: message.id, agent: target.agent, sessionId: target.sessionId };
+    const sent = { agent: target.agent, sessionId: target.sessionId };
+    if (target.agent === "codex" && deps.promptCodex) {
+      const message = createMessage(from, text, new Date(now));
+      if (await deps.promptCodex(target, frameMessages([message]))) return { ...sent, messageId: message.id, delivery: "prompt" };
+    }
+    return { ...sent, messageId: deps.enqueue(target.sessionId, from, text).id, delivery: "inbox" };
   }
 
   /** Messages waiting for this session, framed for the agent. They are delivered once. */

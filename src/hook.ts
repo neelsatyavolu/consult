@@ -10,6 +10,16 @@ function eventOf(payload: Record<string, unknown>): EventName | undefined {
   return raw ? EVENTS[raw.toLowerCase().replaceAll("_", "") as keyof typeof EVENTS] : undefined;
 }
 
+/** For the idle watcher: this session's waiting messages as plain text, whatever event started the watcher. */
+export function rewakeText(payload: unknown, claim: (sessionId: string) => readonly Message[]): string | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const event = payload as Record<string, unknown>;
+  const sessionId = text(event.session_id) ?? text(event.sessionId);
+  if (!sessionId || event.agent_id || event.agentId) return undefined;
+  const messages = claim(sessionId);
+  return messages.length > 0 ? frameMessages(messages) : undefined;
+}
+
 /**
  * What `consult hook` prints for one host hook event: this session's waiting messages in the host's reply
  * format, or nothing. Claude Code and Codex send snake_case fields; Grok sends camelCase ones as well.

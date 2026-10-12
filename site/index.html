@@ -202,7 +202,7 @@
     <section id="messages" class="section wrap" aria-labelledby="messages-title">
       <div class="section-head">
         <h2 id="messages-title">Tell the other session what changed</h2>
-        <p>Asking a copy teaches the original nothing. Turn on session messages and an agent can leave a short note for a session that is still running. That agent reads it in its own conversation after its next tool call or when it finishes its turn, marked as coming from a peer agent and not from you.</p>
+        <p>Asking a copy teaches the original nothing. Turn on session messages and an agent can leave a short note for a session that is still running. That agent reads it in its own conversation after its next tool call or when it finishes its turn, marked as coming from a peer agent and not from you. An idle Claude Code or Codex session is woken to read it.</p>
         <p>Off until you turn it on. Needs live sessions.</p>
       </div>
 
@@ -238,7 +238,7 @@
       <dl class="tools">
         <div class="tool">
           <dt><code><span class="fn">send_message</span>(session_id, message)</code></dt>
-          <dd>Leave up to 4,000 characters for a live session. It never wakes an idle session, which reads the message once you prompt it again, and nothing confirms that it was read.</dd>
+          <dd>Leave up to 4,000 characters for a live session. An idle Claude Code or Codex session is woken, which starts a turn there; an idle Grok session reads the message once you prompt it again. Nothing confirms that it was read.</dd>
         </div>
       </dl>
 

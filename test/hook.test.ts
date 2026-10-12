@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hookReply } from "../src/hook.js";
+import { hookReply, rewakeText } from "../src/hook.js";
 import type { Message } from "../src/sessions/inbox.js";
 
 const message: Message = {
@@ -54,5 +54,21 @@ describe("hookReply", () => {
 
   it("prints nothing when no message is waiting", () => {
     expect(hookReply({ hook_event_name: "PostToolUse", session_id: "s-1" }, () => [])).toBeUndefined();
+  });
+});
+
+describe("rewakeText", () => {
+  it("gives the idle watcher the framed messages for the session in the event", () => {
+    const claim = claimOne();
+    expect(rewakeText({ hook_event_name: "Stop", session_id: "s-1", stop_hook_active: true }, claim)).toMatch(/main moved/);
+    expect(claim).toHaveBeenCalledWith("s-1");
+  });
+
+  it("is empty with nothing waiting, without a session id, and for a subagent", () => {
+    expect(rewakeText({ session_id: "s-1" }, () => [])).toBeUndefined();
+    const claim = claimOne();
+    expect(rewakeText({ hook_event_name: "Stop" }, claim)).toBeUndefined();
+    expect(rewakeText({ session_id: "s-1", agent_id: "sub-1" }, claim)).toBeUndefined();
+    expect(claim).not.toHaveBeenCalled();
   });
 });

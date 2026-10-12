@@ -93,7 +93,7 @@ describe("sessionTools (serve wiring)", () => {
     saveSettings(settingsPath(env), withMessagesEnabled(withSessionsMode(DEFAULT_SETTINGS, "repo"), true));
     const a = await sessionTools(options(env, root, { pid: process.pid, signal: stop.signal, identity: claudeIn("session-a") }));
     const b = await sessionTools(options(env, root, { pid: process.ppid, signal: stop.signal, identity: claudeIn("session-b") }));
-    a!.messages!.send("session-b", "main moved to e27f611");
+    expect((await a!.messages!.send("session-b", "main moved to e27f611")).delivery).toBe("inbox");
     expect(a!.messages!.receive()).toBeUndefined();
     expect(b!.messages!.receive()).toMatch(/From the claude session session-a[\s\S]*main moved to e27f611/);
     expect(b!.messages!.receive()).toBeUndefined();

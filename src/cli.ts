@@ -10,8 +10,8 @@ import { grok, grokWorker } from "./adapters/grok.js";
 import { listAgents } from "./agents.js";
 import { createConsult } from "./consult.js";
 import { progressLog } from "./narrate.js";
-import { hookReply } from "./hook.js";
-import { applyHooks, hookCommand, type HookResult } from "./hooks-install.js";
+import { hookReply, rewakeText } from "./hook.js";
+import { applyHooks, type HookResult } from "./hooks-install.js";
 import { findOnPath, install, isRegistered, serverCommand, uninstall } from "./install.js";
 import {
   DEFAULT_SETTINGS,
@@ -217,19 +217,29 @@ async function configureMessages(flag: boolean | undefined): Promise<boolean> {
 
 /** Puts the message hook in `agents` and removes it from every other installed CLI. Reports only what changed. */
 function setMessageHooks(agents: readonly HostName[]): readonly HookResult[] {
-  const command = agents.length > 0 ? hookCommand(serverCommand(scriptPath(), searchPath())) : undefined;
+  const cmd = agents.length > 0 ? serverCommand(scriptPath(), searchPath()) : undefined;
   const hosts = installedHosts();
   return [
-    ...applyHooks(hosts.filter((agent) => agents.includes(agent)), command),
+    ...applyHooks(hosts.filter((agent) => agents.includes(agent)), cmd),
     ...applyHooks(hosts.filter((agent) => !agents.includes(agent)), undefined),
   ].filter((r) => r.changed || !r.ok);
 }
 
 /** Never fails and never prints anything but a hook reply: the host runs this on every tool call. */
-async function hookCommandMain(): Promise<void> {
+async function hookCommandMain(argv: readonly string[]): Promise<void> {
   try {
     if (!messagesOn(loadSettings(settingsPath()))) return;
-    const reply = hookReply(JSON.parse(await readStdin()), (sessionId) => claim(inboxDir(), sessionId));
+    const payload: unknown = JSON.parse(await readStdin());
+    const take = (sessionId: string) => claim(inboxDir(), sessionId);
+    if (argv.includes("--rewake")) {
+      // Claude Code wakes an idle session when its background hook exits 2, and shows it what stderr holds.
+      const text = rewakeText(payload, take);
+      if (!text) return;
+      process.stderr.write(`${text}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    const reply = hookReply(payload, take);
     if (reply) process.stdout.write(`${reply}\n`);
   } catch {
     // Unread messages stay queued for the next event.
@@ -269,7 +279,7 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
     case "hook":
-      return hookCommandMain();
+      return hookCommandMain(rest);
     case "settings": {
       if (!isInteractive()) {
         throw new Error("consult settings needs an interactive terminal; in scripts use `consult install --sessions=off|repo|machine`");

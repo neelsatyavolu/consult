@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyHookFile, applyHooks, hookCommand, hookFilePath, withConsultHooks } from "../src/hooks-install.js";
+import { applyHookFile, applyHooks, hookCommand, hookFilePath, watchCommand, withConsultHooks } from "../src/hooks-install.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "consult-hooks-"));
 const cmd = { command: "/usr/bin/node", args: ["/opt/consult/dist/cli.js", "serve"], path: "/usr/bin:/bin" };
@@ -34,6 +34,44 @@ describe("hookCommand", () => {
     for (const shell of shells) {
       expect(runHook(shell, '{"session_id":"s-1"}')).toBe("");
       expect(runHook(shell, '{"session_id":"s-2"}')).toBe('ran hook with {"session_id":"s-2"}\n');
+    }
+  });
+});
+
+describe("watchCommand", () => {
+  const shells = ["/bin/sh", "/bin/bash", "/bin/zsh"].filter((shell) => existsSync(shell));
+
+  function setup() {
+    const dir = tmp();
+    const fake = join(dir, "fake-consult");
+    // Stands in for `consult hook --rewake`: exit 2 with the message on stderr.
+    writeFileSync(fake, "#!/bin/sh\necho \"woke by $1 $2\" >&2\nexit 2\n");
+    chmodSync(fake, 0o755);
+    const command = watchCommand({ command: fake, args: ["serve"], path: "/usr/bin:/bin" });
+    const run = (shell: string, input: string) =>
+      spawnSync(shell, ["-c", command], { input, env: { XDG_STATE_HOME: dir, PATH: "/usr/bin:/bin" }, encoding: "utf8", timeout: 20_000 });
+    return { dir, run };
+  }
+
+  it("exits 2 with the message once the session has one waiting", () => {
+    for (const shell of shells) {
+      const { dir, run } = setup();
+      mkdirSync(join(dir, "consult", "inbox", "s-1"), { recursive: true });
+      const res = run(shell, '{"session_id":"s-1","hook_event_name":"Stop"}');
+      // A shell may print its own startup noise first.
+      expect([shell, res.status, res.stderr.endsWith("woke by hook --rewake\n")]).toEqual([shell, 2, true]);
+      expect(existsSync(join(dir, "consult", "watch-s-1.pid"))).toBe(false);
+    }
+  });
+
+  it("leaves at once for Grok, without a session id, and when this session already has a watcher", () => {
+    for (const shell of shells) {
+      const { dir, run } = setup();
+      mkdirSync(join(dir, "consult", "inbox", "s-1"), { recursive: true });
+      expect(run(shell, '{"hookEventName":"stop","session_id":"s-1"}').status).toBe(0);
+      expect(run(shell, '{"hook_event_name":"Stop"}').status).toBe(0);
+      writeFileSync(join(dir, "consult", "watch-s-1.pid"), String(process.pid));
+      expect(run(shell, '{"session_id":"s-1"}').status).toBe(0);
     }
   });
 });
@@ -98,12 +136,18 @@ describe("applyHooks", () => {
     const env = { CLAUDE_CONFIG_DIR: join(home, "claude"), CODEX_HOME: join(home, "codex") };
     mkdirSync(env.CODEX_HOME);
     writeFileSync(join(env.CODEX_HOME, "hooks.json"), "{broken");
-    const results = applyHooks(["claude", "codex"], "CONSULT_HOOK=1 x", env);
+    const results = applyHooks(["claude", "codex"], cmd, env);
     expect(results.map((r) => [r.agent, r.ok, r.changed])).toEqual([
       ["claude", true, true],
       ["codex", false, false],
     ]);
-    expect(Object.keys(read(hookFilePath("claude", env)).hooks)).toEqual(["UserPromptSubmit", "PostToolUse", "Stop"]);
+    const hooks = read(hookFilePath("claude", env)).hooks;
+    expect(Object.keys(hooks)).toEqual(["UserPromptSubmit", "PostToolUse", "Stop"]);
+    // Claude Code also gets the background watcher that wakes an idle session.
+    expect(hooks.Stop.map((g: any) => g.hooks[0].asyncRewake)).toEqual([undefined, true]);
+    expect(hooks.Stop[1].hooks[0].command).toBe(watchCommand(cmd));
+    expect(applyHooks(["claude"], undefined, env)[0]).toMatchObject({ ok: true, changed: true });
+    expect(existsSync(hookFilePath("claude", env))).toBe(false);
     expect(hookFilePath("grok", env)).toMatch(/\.grok\/hooks\/consult\.json$/);
   });
 });
