@@ -39,6 +39,7 @@
     <nav class="nav-links" aria-label="Primary">
       <a href="#tools">Tools</a>
       <a href="#sessions">Live sessions</a>
+      <a href="#messages">Messages</a>
       <a href="#containment">Safety</a>
       <a href="#install">Install</a>
       <a class="nav-gh" href="https://github.com/neelsatyavolu/consult">
@@ -196,6 +197,56 @@
         <button class="copy" type="button" data-copy="npx -y consult-mcp@latest settings" hidden>Copy</button>
       </div>
       <p class="aside">Install asks whether to turn it on, or pass <code>--sessions=repo</code>. A copy can repeat anything in its session’s conversation to the agent that asked, so choose the scope you’re comfortable with.</p>
+    </section>
+
+    <section id="messages" class="section wrap" aria-labelledby="messages-title">
+      <div class="section-head">
+        <h2 id="messages-title">Tell the other session what changed</h2>
+        <p>Asking a copy teaches the original nothing. Turn on session messages and an agent can leave a short note for a session that is still running. That agent reads it in its own conversation after its next tool call or when it finishes its turn, marked as coming from a peer agent and not from you.</p>
+        <p>Off until you turn it on. Needs live sessions.</p>
+      </div>
+
+      <figure class="thread sessions-thread" aria-label="Example: Claude Code tells a live Grok session that main moved">
+        <figcaption class="thread-head">
+          <span>Claude Code, working in <span class="mono">acme/app</span></span>
+          <span class="thread-model mono">opus</span>
+        </figcaption>
+
+        <ol class="turns">
+          <li class="turn turn-codex-ask">
+            <span class="speaker">claude</span>
+            <div class="body">
+              <p>I merged and pushed <span class="mono">main</span>. The Grok session in this checkout has uncommitted edits, so I’m telling it what moved.</p>
+              <pre class="call"><code><span class="fn">send_message</span>
+  session_id <span class="str">"7be2f0c4"</span>
+  message    <span class="str">"main is now at e27f611. Re-read
+             lib/config.ts and lib/ai/registry.ts;
+             your edits were kept."</span></code></pre>
+            </div>
+          </li>
+
+          <li class="turn turn-claude-reply">
+            <span class="speaker">grok</span>
+            <div class="body">
+              <p>A message arrived from the Claude session on <span class="mono">main</span>. I re-read both files before continuing; my edits to <span class="mono">lib/ai/decision.ts</span> still apply.</p>
+              <p class="meta mono">read after its next tool call · from claude session 19a4c6d2</p>
+            </div>
+          </li>
+        </ol>
+      </figure>
+
+      <dl class="tools">
+        <div class="tool">
+          <dt><code><span class="fn">send_message</span>(session_id, message)</code></dt>
+          <dd>Leave up to 4,000 characters for a live session. It never wakes an idle session, which reads the message once you prompt it again, and nothing confirms that it was read.</dd>
+        </div>
+      </dl>
+
+      <div class="command" data-copy-wrap>
+        <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest install --sessions=repo --messages=on</code>
+        <button class="copy" type="button" data-copy="npx -y consult-mcp@latest install --sessions=repo --messages=on" hidden>Copy</button>
+      </div>
+      <p class="aside">Delivery uses a hook that install adds to each agent’s own hook file and removes again when you turn messages off. A message puts one agent’s text into another’s context, so it follows the same scope as live sessions and is limited in size and rate.</p>
     </section>
 
     <section class="section wrap" aria-labelledby="when-title">
