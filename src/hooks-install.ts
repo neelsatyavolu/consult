@@ -24,8 +24,9 @@ const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 export function hookCommand(cmd: ServerCommand): string {
   const launcher = [cmd.command, ...cmd.args.slice(0, -1), "hook"].map(shellQuote).join(" ");
   return [
-    'i=$(cat); for d in "${XDG_STATE_HOME:-$HOME/.local/state}"/consult/inbox/*/; do [ -d "$d" ] || continue;',
-    `case "$i" in *"$(basename "$d")"*) printf '%s' "$i" | ${MARKER} PATH=${shellQuote(cmd.path)}:"$PATH" ${launcher}; break;; esac;`,
+    // No glob: hosts may run hooks through zsh, which fails the whole command when a glob matches nothing.
+    'i=$(cat); for s in $(ls "${XDG_STATE_HOME:-$HOME/.local/state}/consult/inbox" 2>/dev/null); do',
+    `case "$i" in *"$s"*) printf '%s' "$i" | ${MARKER} PATH=${shellQuote(cmd.path)}:"$PATH" ${launcher}; break;; esac;`,
     "done; exit 0",
   ].join(" ");
 }

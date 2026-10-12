@@ -22,13 +22,19 @@ describe("hookCommand", () => {
     writeFileSync(fake, "#!/bin/sh\necho \"ran $1 with $(cat)\"\n");
     chmodSync(fake, 0o755);
     const command = hookCommand({ command: fake, args: ["serve"], path: "/usr/bin:/bin" });
-    const runHook = (input: string) =>
-      execFileSync("/bin/sh", ["-c", command], { input, env: { XDG_STATE_HOME: dir, PATH: "/usr/bin:/bin" }, encoding: "utf8" });
+    // Hosts differ in the shell they run hooks with; zsh fails a command whose glob matches nothing.
+    const shells = ["/bin/sh", "/bin/bash", "/bin/zsh"].filter((shell) => existsSync(shell));
+    const runHook = (shell: string, input: string) =>
+      execFileSync(shell, ["-c", command], { input, env: { XDG_STATE_HOME: dir, PATH: "/usr/bin:/bin" }, encoding: "utf8" });
 
-    expect(runHook('{"session_id":"s-1"}')).toBe("");
-    mkdirSync(join(dir, "consult", "inbox", "s-2"), { recursive: true });
-    expect(runHook('{"session_id":"s-1"}')).toBe("");
-    expect(runHook('{"session_id":"s-2"}')).toBe('ran hook with {"session_id":"s-2"}\n');
+    for (const shell of shells) expect(runHook(shell, '{"session_id":"s-1"}')).toBe("");
+    mkdirSync(join(dir, "consult", "inbox"), { recursive: true });
+    for (const shell of shells) expect(runHook(shell, '{"session_id":"s-1"}')).toBe("");
+    mkdirSync(join(dir, "consult", "inbox", "s-2"));
+    for (const shell of shells) {
+      expect(runHook(shell, '{"session_id":"s-1"}')).toBe("");
+      expect(runHook(shell, '{"session_id":"s-2"}')).toBe('ran hook with {"session_id":"s-2"}\n');
+    }
   });
 });
 
