@@ -10,16 +10,29 @@ import { grok, grokWorker } from "./adapters/grok.js";
 import { listAgents } from "./agents.js";
 import { createConsult } from "./consult.js";
 import { progressLog } from "./narrate.js";
-import { findOnPath, install, isRegistered, serverCommand, uninstall, type InstallResult } from "./install.js";
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, sessionsMode, settingsPath, withSessionsMode, type SessionsMode } from "./settings.js";
+import { hookReply } from "./hook.js";
+import { applyHooks, hookCommand, type HookResult } from "./hooks-install.js";
+import { findOnPath, install, isRegistered, serverCommand, uninstall } from "./install.js";
+import {
+  DEFAULT_SETTINGS,
+  loadSettings,
+  messagesOn,
+  saveSettings,
+  sessionsMode,
+  settingsPath,
+  withMessagesEnabled,
+  withSessionsMode,
+  type SessionsMode,
+} from "./settings.js";
 import { run } from "./run.js";
 import { createServer } from "./server.js";
+import { claim, inboxDir } from "./sessions/inbox.js";
 import { listLive, registryDir } from "./sessions/registry.js";
 import { assertNotLiveSession } from "./sessions/service.js";
 import { sessionTools } from "./sessions/wire.js";
 import { createTaskManager } from "./tasks.js";
-import { chooseInstallMode, isInteractive, parseSessionsFlag, promptSessionsMode, runSettings } from "./tui.js";
-import { AGENTS, EFFORTS, HOSTS, SESSION_ID_PATTERN, type AgentName, type Effort } from "./types.js";
+import { chooseInstallMode, isInteractive, parseMessagesFlag, parseSessionsFlag, promptMessages, promptSessionsMode, runSettings } from "./tui.js";
+import { AGENTS, EFFORTS, HOSTS, SESSION_ID_PATTERN, type AgentName, type Effort, type HostName } from "./types.js";
 import { VERSION } from "./version.js";
 
 const DEFAULT_TIMEOUT_SEC = 900;
@@ -34,10 +47,11 @@ const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
       --model <id>  --effort low|medium|high  --resume <session_id>  --cwd <dir>
       a question of "-" is read from stdin; progress goes to stderr, the answer alone to stdout
   consult agents                         list installed CLIs and models
-  consult install [--sessions off|repo|machine]
+  consult install [--sessions off|repo|machine] [--messages on|off]
                                          register the MCP server with claude, codex and grok
   consult uninstall                      remove it from all three
-  consult settings                       live sessions, task dispatch, and which agents use consult (interactive)
+  consult settings                       live sessions, messages, task dispatch, and which agents use consult (interactive)
+  consult hook                           run by the agents' hooks to deliver session messages
 
 agents: ${AGENTS.join(", ")}
 timeouts: CONSULT_TIMEOUT_SEC per advisor call (default ${DEFAULT_TIMEOUT_SEC}; raise it for long grok runs),
@@ -180,8 +194,50 @@ async function configureSessions(flag: SessionsMode | undefined): Promise<void> 
   process.stdout.write(`Live sessions: ${mode ?? sessionsMode(current)} (change with \`consult settings\`)\n`);
 }
 
+/** Applies --messages, or asks in a terminal while live sessions are on. With neither, the setting stays as it is. */
+async function configureMessages(flag: boolean | undefined): Promise<boolean> {
+  const path = settingsPath();
+  let current;
+  try {
+    current = loadSettings(path);
+  } catch {
+    // configureSessions has reported the invalid file.
+    return false;
+  }
+  const asked = flag ?? (isInteractive() && current.sessions.enabled ? await promptMessages(current.messages.enabled) : undefined);
+  const next = asked === undefined ? current : withMessagesEnabled(current, asked);
+  if (asked !== undefined) saveSettings(path, next);
+  if (next.messages.enabled && !next.sessions.enabled) {
+    process.stdout.write("Session messages: off until live sessions are turned on\n");
+  } else {
+    process.stdout.write(`Session messages: ${messagesOn(next) ? "on" : "off"} (change with \`consult settings\`)\n`);
+  }
+  return messagesOn(next);
+}
+
+/** Puts the message hook in `agents` and removes it from every other installed CLI. Reports only what changed. */
+function setMessageHooks(agents: readonly HostName[]): readonly HookResult[] {
+  const command = agents.length > 0 ? hookCommand(serverCommand(scriptPath(), searchPath())) : undefined;
+  const hosts = installedHosts();
+  return [
+    ...applyHooks(hosts.filter((agent) => agents.includes(agent)), command),
+    ...applyHooks(hosts.filter((agent) => !agents.includes(agent)), undefined),
+  ].filter((r) => r.changed || !r.ok);
+}
+
+/** Never fails and never prints anything but a hook reply: the host runs this on every tool call. */
+async function hookCommandMain(): Promise<void> {
+  try {
+    if (!messagesOn(loadSettings(settingsPath()))) return;
+    const reply = hookReply(JSON.parse(await readStdin()), (sessionId) => claim(inboxDir(), sessionId));
+    if (reply) process.stdout.write(`${reply}\n`);
+  } catch {
+    // Unread messages stay queued for the next event.
+  }
+}
+
 /** Prints one line per CLI and returns whether every step succeeded. */
-function report(results: readonly InstallResult[]): boolean {
+function report(results: readonly { readonly ok: boolean; readonly message: string }[]): boolean {
   process.stdout.write(`${results.map((r) => r.message).join("\n")}\n`);
   const ok = results.every((r) => r.ok);
   if (!ok) process.exitCode = 1;
@@ -199,16 +255,21 @@ async function main(argv: readonly string[]): Promise<void> {
       process.stdout.write(`${JSON.stringify(await listAgents(run), null, 2)}\n`);
       return;
     case "install": {
-      const { values } = parseArgs({ args: [...rest], options: { sessions: { type: "string" } } });
+      const { values } = parseArgs({ args: [...rest], options: { sessions: { type: "string" }, messages: { type: "string" } } });
       const flag = parseSessionsFlag(values.sessions);
+      const messagesFlag = parseMessagesFlag(values.messages);
       if (report(await install(run, serverCommand(scriptPath(), searchPath()), installedHosts()))) {
         await configureSessions(flag);
+        const hooks = setMessageHooks((await configureMessages(messagesFlag)) ? installedHosts() : []);
+        if (hooks.length > 0) report(hooks);
         process.stdout.write("Restart running agent sessions to pick up the new tools.\n");
-      } else if (flag) {
-        process.stderr.write("consult: live sessions setting left unchanged because registration failed\n");
+      } else if (flag || messagesFlag !== undefined) {
+        process.stderr.write("consult: live sessions and messages settings left unchanged because registration failed\n");
       }
       return;
     }
+    case "hook":
+      return hookCommandMain();
     case "settings": {
       if (!isInteractive()) {
         throw new Error("consult settings needs an interactive terminal; in scripts use `consult install --sessions=off|repo|machine`");
@@ -222,11 +283,12 @@ async function main(argv: readonly string[]): Promise<void> {
         isRegistered: (agent) => isRegistered(run, agent),
         register: (agents) => install(run, cmd, agents),
         unregister: (agents) => uninstall(run, agents),
+        setMessageHooks,
       });
       return;
     }
     case "uninstall":
-      report(await uninstall(run, installedHosts()));
+      report([...(await uninstall(run, installedHosts())), ...setMessageHooks([])]);
       return;
     case "--version":
     case "-v":

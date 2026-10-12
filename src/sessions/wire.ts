@@ -3,6 +3,7 @@ import { loadSettings, settingsPath, type Settings } from "../settings.js";
 import type { Runner } from "../types.js";
 import { codexIndexPath, describeSession } from "./describe.js";
 import { systemIdentityDeps, type IdentityDeps } from "./identity.js";
+import { claim, enqueue, inboxDir } from "./inbox.js";
 import { startLiveSession } from "./live.js";
 import { listLive, registryDir } from "./registry.js";
 import { createSessions, type SessionsDeps } from "./service.js";
@@ -49,14 +50,17 @@ export async function sessionTools(opts: WireOptions): Promise<SessionToolDeps |
       signal: opts.signal,
       warn: opts.warn,
     });
-    const { list, ask } = createSessions({
+    const inbox = inboxDir(opts.env);
+    const { list, ask, send, receive } = createSessions({
       self: live.self,
       settings: () => loadSettings(path),
       listLive: () => listLive(dir),
       describe: (entry) => describeSession(entry, codexIndex),
       askFork: opts.askFork,
+      enqueue: (recipient, from, text) => enqueue(inbox, recipient, from, text),
+      claim: (sessionId) => claim(inbox, sessionId),
     });
-    return { list, ask };
+    return { list, ask, ...(settings.messages.enabled ? { messages: { send, receive } } : {}) };
   } catch (err) {
     opts.warn(`could not start live sessions: ${err instanceof Error ? err.message : String(err)}; live sessions are off for this session`);
     return undefined;

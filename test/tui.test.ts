@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, withSessionsMode, withTasksEnabled } from "../src/settings.js";
-import { chooseInstallMode, parseSessionsFlag, planSettings } from "../src/tui.js";
+import { DEFAULT_SETTINGS, messagesOn, withSessionsMode, withTasksEnabled } from "../src/settings.js";
+import { chooseInstallMode, parseMessagesFlag, parseSessionsFlag, planSettings } from "../src/tui.js";
 
 describe("parseSessionsFlag", () => {
   it("accepts off, repo and machine, and is undefined when absent", () => {
@@ -37,22 +37,38 @@ describe("chooseInstallMode", () => {
 
 describe("planSettings", () => {
   it("applies the mode and registers or removes only the hosts that changed", () => {
-    const plan = planSettings(DEFAULT_SETTINGS, ["claude", "codex"], { mode: "repo", tasks: false, hosts: ["codex", "grok"] });
+    const plan = planSettings(DEFAULT_SETTINGS, ["claude", "codex"], { mode: "repo", tasks: false, messages: false, hosts: ["codex", "grok"] });
     expect(plan.settings).toEqual(withSessionsMode(DEFAULT_SETTINGS, "repo"));
     expect(plan.register).toEqual(["grok"]);
     expect(plan.unregister).toEqual(["claude"]);
   });
 
   it("applies the task dispatch choice", () => {
-    const plan = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: true, hosts: [] });
+    const plan = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: true, messages: false, hosts: [] });
     expect(plan.settings).toEqual(withTasksEnabled(DEFAULT_SETTINGS, true));
   });
 
   it("changes nothing when nothing changed", () => {
-    expect(planSettings(DEFAULT_SETTINGS, ["claude"], { mode: "off", tasks: false, hosts: ["claude"] })).toEqual({
+    expect(planSettings(DEFAULT_SETTINGS, ["claude"], { mode: "off", tasks: false, messages: false, hosts: ["claude"] })).toEqual({
       settings: DEFAULT_SETTINGS,
       register: [],
       unregister: [],
     });
+  });
+});
+
+describe("session messages setting", () => {
+  it("parses --messages", () => {
+    expect(parseMessagesFlag("on")).toBe(true);
+    expect(parseMessagesFlag("off")).toBe(false);
+    expect(parseMessagesFlag(undefined)).toBeUndefined();
+    expect(() => parseMessagesFlag("yes")).toThrow(/on or off/);
+  });
+
+  it("is on only together with live sessions", () => {
+    const withSessions = planSettings(DEFAULT_SETTINGS, [], { mode: "repo", tasks: false, messages: true, hosts: [] });
+    expect(messagesOn(withSessions.settings)).toBe(true);
+    const without = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: false, messages: true, hosts: [] });
+    expect(messagesOn(without.settings)).toBe(false);
   });
 });

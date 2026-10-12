@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AgentInfo } from "./agents.js";
 import { withProgress } from "./progress.js";
-import { registerSessionTools, SESSIONS_INSTRUCTIONS, type SessionToolDeps } from "./session-tools.js";
+import { MESSAGES_INSTRUCTIONS, registerSessionTools, SESSIONS_INSTRUCTIONS, type SessionToolDeps } from "./session-tools.js";
 import { registerTaskTools, TASKS_INSTRUCTIONS } from "./task-tools.js";
 import type { TaskManager } from "./tasks.js";
 import { AGENTS, EFFORTS, SESSION_ID_PATTERN, type AgentName, type AskRequest, type AskResult } from "./types.js";
@@ -95,7 +95,12 @@ export function createServer({
   sessions,
   tasks,
 }: ServerDeps): McpServer {
-  const instructions = [INSTRUCTIONS, ...(sessions ? [SESSIONS_INSTRUCTIONS] : []), ...(tasks ? [TASKS_INSTRUCTIONS] : [])].join("\n");
+  const instructions = [
+    INSTRUCTIONS,
+    ...(sessions ? [SESSIONS_INSTRUCTIONS] : []),
+    ...(sessions?.messages ? [MESSAGES_INSTRUCTIONS] : []),
+    ...(tasks ? [TASKS_INSTRUCTIONS] : []),
+  ].join("\n");
   const server = new McpServer({ name: "consult", version: VERSION }, { instructions });
 
   server.registerTool(

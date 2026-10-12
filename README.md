@@ -37,6 +37,8 @@ Requirements: Node 22 or later, macOS or Linux, and at least one of the `claude`
 
 Each entry sets `PATH` to the directories holding the launcher (`npx` or `node`) and the agent CLIs, because some hosts start MCP servers with a minimal environment.
 
+With [session messages](#session-messages) on, install also adds one hook to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's.
+
 To pin to a specific build instead of following `@latest`, install globally with `npm i -g consult-mcp` and run `consult install`, or run `node dist/cli.js install` from a checkout. Hosts then launch that exact script.
 </details>
 
@@ -55,6 +57,8 @@ To pin to a specific build instead of following `@latest`, install globally with
 **`list_agents`** shows the installed CLIs, their versions and the model IDs each account can use.
 
 **`list_sessions`** and **`ask_session`** `{session_id, question, effort?}` appear when [live sessions](#live-sessions) are on.
+
+**`send_message`** `{session_id, message}` appears when [session messages](#session-messages) are on.
 
 **`dispatch_task`**, **`task_status`** and **`cancel_task`** appear when [task dispatch](#task-dispatch) is on.
 
@@ -82,7 +86,7 @@ Turn it on when you install, or later:
 
 ```bash
 npx -y consult-mcp@latest install --sessions=repo   # or off, machine; without the flag, install asks when run in a terminal
-npx -y consult-mcp@latest settings                  # interactive: live sessions, task dispatch, and which agents use consult
+npx -y consult-mcp@latest settings                  # interactive: live sessions, messages, task dispatch, and which agents use consult
 ```
 
 | Setting | Who can see and ask whom |
@@ -98,6 +102,31 @@ Settings are stored in `$XDG_CONFIG_HOME/consult/settings.json` (default `~/.con
 | claude | the record Claude Code keeps for each running process (`~/.claude/sessions/<pid>.json`), so it follows `/resume` and `/clear`; `CLAUDE_CODE_SESSION_ID` as a fallback. Listed once the conversation is saved, after its first message |
 | codex | the `rollout-*.jsonl` file the codex process holds open, from the session's first turn on |
 | grok | the `~/.grok/sessions/<cwd>/<session id>/events.jsonl` file the interactive grok process holds open, from the session's first turn on; not identified if several sessions are open |
+
+## Session messages
+
+Off by default, and only available with live sessions on. `ask_session` asks a copy, so the session itself learns nothing. With messages on, an agent can tell a running session something. For example, the Claude Code session that just merged and pushed `main` can tell the Grok session with uncommitted edits in the same checkout which files changed under it.
+
+- **`send_message`** `{session_id, message}` leaves a message of up to 4,000 characters for a session from `list_sessions`. The receiving agent reads it in its own conversation, marked with the sending agent, session id, directory and branch, and with a note that it comes from a peer agent and is not an instruction from you. It can reply with its own `send_message`.
+
+Delivery uses each CLI's hooks, which `consult install` adds when messages are on:
+
+| CLI | When a waiting message is read |
+| --- | --- |
+| claude | with your next prompt, after its next tool call, or when it finishes its turn |
+| codex | with your next prompt, after its next tool call, or when it finishes its turn. Codex only runs a hook you have trusted |
+| grok | after its next tool call, or when it finishes its turn |
+
+A message never wakes an idle session: it waits until that session works again, so an idle one reads it only after you prompt it. Nothing tells the sender that a message was read. A session without the hook still gets its messages with the reply to its next `list_sessions`, `ask_session` or `send_message` call. Unread messages are dropped after 24 hours; a session holds at most 20, and one session can send another at most 10 an hour.
+
+Turn it on when you install, or later:
+
+```bash
+npx -y consult-mcp@latest install --sessions=repo --messages=on
+npx -y consult-mcp@latest settings
+```
+
+Waiting messages are stored in `$XDG_STATE_HOME/consult/inbox/` (default `~/.local/state/consult/`), in files only you can read. The same `repo` and `machine` scopes decide who can message whom.
 
 ## Task dispatch
 
@@ -157,7 +186,7 @@ consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe un
 consult ask codex --resume <session_id> "What would you change first?"
 consult ask grok - < question.md      # long questions from a file or pipe
 consult agents
-consult settings                      # live sessions, task dispatch, and which agents use consult
+consult settings                      # live sessions, messages, task dispatch, and which agents use consult
 ```
 
 Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. Advisors are read-only here too: the same containment flags apply, so there is no need to tell them not to edit files. While one works, `consult ask` prints timestamped progress to stderr (commands run and messages for codex and grok, a heartbeat after 30 quiet seconds for any agent) and only the answer to stdout.

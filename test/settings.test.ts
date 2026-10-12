@@ -27,14 +27,14 @@ describe("settingsPath", () => {
 
 describe("loadSettings / saveSettings", () => {
   it("returns the defaults, with live sessions and task dispatch off, when the file does not exist", () => {
-    expect(loadSettings(tmpPath())).toEqual({ version: 1, sessions: { enabled: false, scope: "repo" }, tasks: { enabled: false } });
+    expect(loadSettings(tmpPath())).toEqual({ version: 1, sessions: { enabled: false, scope: "repo" }, tasks: { enabled: false }, messages: { enabled: false } });
   });
 
-  it("reads a file written before task dispatch existed as task dispatch off", () => {
+  it("reads a file written before task dispatch and messages existed with both off", () => {
     const path = tmpPath();
     saveSettings(path, DEFAULT_SETTINGS);
     writeFileSync(path, JSON.stringify({ version: 1, sessions: { enabled: true, scope: "machine" } }));
-    expect(loadSettings(path)).toEqual({ version: 1, sessions: { enabled: true, scope: "machine" }, tasks: { enabled: false } });
+    expect(loadSettings(path)).toEqual({ version: 1, sessions: { enabled: true, scope: "machine" }, tasks: { enabled: false }, messages: { enabled: false } });
   });
 
   it("round-trips task dispatch", () => {
