@@ -1,13 +1,13 @@
 import { log, multiselect } from "@clack/prompts";
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, withSessionsMode, withTasksEnabled } from "../src/settings.js";
-import { chooseInstallMode, parseSessionsFlag, planSettings, runSettings } from "../src/tui.js";
+import { DEFAULT_SETTINGS, messagesOn, withSessionsMode, withTasksEnabled } from "../src/settings.js";
+import { chooseInstallMode, parseMessagesFlag, parseSessionsFlag, planSettings, runSettings } from "../src/tui.js";
 
 vi.mock("@clack/prompts", () => ({
   intro: vi.fn(),
   outro: vi.fn(),
   cancel: vi.fn(),
-  log: { warn: vi.fn(), success: vi.fn(), error: vi.fn() },
+  log: { warn: vi.fn(), info: vi.fn(), success: vi.fn(), error: vi.fn() },
   isCancel: () => false,
   select: vi.fn(async () => "repo"),
   confirm: vi.fn(async () => false),
@@ -49,19 +49,19 @@ describe("chooseInstallMode", () => {
 
 describe("planSettings", () => {
   it("applies the mode and registers or removes only the hosts that changed", () => {
-    const plan = planSettings(DEFAULT_SETTINGS, ["claude", "codex"], { mode: "repo", tasks: false, hosts: ["codex", "grok"] });
+    const plan = planSettings(DEFAULT_SETTINGS, ["claude", "codex"], { mode: "repo", tasks: false, messages: false, hosts: ["codex", "grok"] });
     expect(plan.settings).toEqual(withSessionsMode(DEFAULT_SETTINGS, "repo"));
     expect(plan.register).toEqual(["grok"]);
     expect(plan.unregister).toEqual(["claude"]);
   });
 
   it("applies the task dispatch choice", () => {
-    const plan = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: true, hosts: [] });
+    const plan = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: true, messages: false, hosts: [] });
     expect(plan.settings).toEqual(withTasksEnabled(DEFAULT_SETTINGS, true));
   });
 
   it("changes nothing when nothing changed", () => {
-    expect(planSettings(DEFAULT_SETTINGS, ["claude"], { mode: "off", tasks: false, hosts: ["claude"] })).toEqual({
+    expect(planSettings(DEFAULT_SETTINGS, ["claude"], { mode: "off", tasks: false, messages: false, hosts: ["claude"] })).toEqual({
       settings: DEFAULT_SETTINGS,
       register: [],
       unregister: [],
@@ -82,9 +82,26 @@ describe("runSettings", () => {
       },
       register: async () => [],
       unregister: async () => [],
+      setMessageHooks: () => [],
     });
     expect(log.warn).toHaveBeenCalledWith(expect.stringMatching(/codex: could not parse config/));
     expect(multiselect).toHaveBeenCalledWith(expect.objectContaining({ initialValues: ["claude"] }));
     expect(save).toHaveBeenCalled();
+  });
+});
+
+describe("session messages setting", () => {
+  it("parses --messages", () => {
+    expect(parseMessagesFlag("on")).toBe(true);
+    expect(parseMessagesFlag("off")).toBe(false);
+    expect(parseMessagesFlag(undefined)).toBeUndefined();
+    expect(() => parseMessagesFlag("yes")).toThrow(/on or off/);
+  });
+
+  it("is on only together with live sessions", () => {
+    const withSessions = planSettings(DEFAULT_SETTINGS, [], { mode: "repo", tasks: false, messages: true, hosts: [] });
+    expect(messagesOn(withSessions.settings)).toBe(true);
+    const without = planSettings(DEFAULT_SETTINGS, [], { mode: "off", tasks: false, messages: true, hosts: [] });
+    expect(messagesOn(without.settings)).toBe(false);
   });
 });

@@ -1,9 +1,12 @@
 import { cancel, confirm, intro, isCancel, log, multiselect, outro, select } from "@clack/prompts";
 import type { InstallResult } from "./install.js";
+import { SESSIONS_UNSUPPORTED } from "./platform.js";
 import {
   DEFAULT_SETTINGS,
   SESSIONS_MODES,
+  messagesOn,
   sessionsMode,
+  withMessagesEnabled,
   withSessionsMode,
   withTasksEnabled,
   type SessionsMode,
@@ -50,10 +53,10 @@ export interface SettingsPlan {
 export function planSettings(
   current: Settings,
   registered: readonly HostName[],
-  chosen: { readonly mode: SessionsMode; readonly tasks: boolean; readonly hosts: readonly HostName[] },
+  chosen: { readonly mode: SessionsMode; readonly tasks: boolean; readonly messages: boolean; readonly hosts: readonly HostName[] },
 ): SettingsPlan {
   return {
-    settings: withTasksEnabled(withSessionsMode(current, chosen.mode), chosen.tasks),
+    settings: withMessagesEnabled(withTasksEnabled(withSessionsMode(current, chosen.mode), chosen.tasks), chosen.messages),
     register: chosen.hosts.filter((agent) => !registered.includes(agent)),
     unregister: registered.filter((agent) => !chosen.hosts.includes(agent)),
   };
@@ -69,6 +72,21 @@ export async function promptSessionsMode(current: SessionsMode): Promise<Session
   return isCancel(mode) ? undefined : mode;
 }
 
+export function parseMessagesFlag(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "on" && value !== "off") throw new Error("--messages must be on or off");
+  return value === "on";
+}
+
+/** Asks whether sessions may message each other. Undefined when the user cancels. */
+export async function promptMessages(current: boolean): Promise<boolean | undefined> {
+  const on = await confirm({
+    message: "Session messages: let agents send messages into each other's running sessions? (adds a hook to each agent)",
+    initialValue: current,
+  });
+  return isCancel(on) ? undefined : on;
+}
+
 export interface SettingsIo {
   /** Throws SettingsError when the file is invalid. */
   readonly load: () => Settings;
@@ -77,6 +95,10 @@ export interface SettingsIo {
   readonly isRegistered: (agent: HostName) => Promise<boolean>;
   readonly register: (agents: readonly HostName[]) => Promise<readonly InstallResult[]>;
   readonly unregister: (agents: readonly HostName[]) => Promise<readonly InstallResult[]>;
+  /** Puts the message hook in these agents and removes it from the others; returns what changed. */
+  readonly setMessageHooks: (agents: readonly HostName[]) => readonly InstallResult[];
+  /** False on platforms without live sessions: their questions are skipped and the settings kept as they are. */
+  readonly sessionsSupported?: boolean;
 }
 
 async function loadOrReset(io: SettingsIo): Promise<Settings | undefined> {
@@ -103,8 +125,13 @@ export async function runSettings(io: SettingsIo): Promise<void> {
     }
   }
 
-  const mode = await promptSessionsMode(sessionsMode(current));
+  const supported = io.sessionsSupported ?? true;
+  if (!supported) log.info(`Note: ${SESSIONS_UNSUPPORTED}.`);
+  const mode = supported ? await promptSessionsMode(sessionsMode(current)) : sessionsMode(current);
   if (mode === undefined) return cancel("No changes made.");
+  // Messages go between live sessions, so there is nothing to ask while those are off.
+  const messages = mode === "off" || !supported ? current.messages.enabled : await promptMessages(current.messages.enabled);
+  if (messages === undefined) return cancel("No changes made.");
   const tasks = await confirm({
     message: "Task dispatch: let agents hand tasks to Codex and Grok workers that edit files and run commands?",
     initialValue: current.tasks.enabled,
@@ -121,13 +148,16 @@ export async function runSettings(io: SettingsIo): Promise<void> {
         });
   if (isCancel(hosts)) return cancel("No changes made.");
 
-  const plan = planSettings(current, registered, { mode, tasks, hosts });
+  const plan = planSettings(current, registered, { mode, tasks, messages, hosts });
   io.save(plan.settings);
   const changed = [...plan.register, ...plan.unregister];
   const results = [
     ...(plan.register.length > 0 ? await io.register(plan.register) : []),
     ...(plan.unregister.length > 0 ? await io.unregister(plan.unregister) : []),
   ].filter((r) => changed.includes(r.agent));
-  for (const r of results) (r.ok ? log.success : log.error)(r.message);
-  outro(`Live sessions: ${mode}. Task dispatch: ${tasks ? "on" : "off"}. Restart running agent sessions to apply.`);
+  const hooks = io.setMessageHooks(messagesOn(plan.settings) && supported ? hosts : []);
+  for (const r of [...results, ...hooks]) (r.ok ? log.success : log.error)(r.message);
+  const messagesState = messagesOn(plan.settings) ? "on" : "off";
+  const sessionsState = supported ? `Live sessions: ${mode}. Session messages: ${messagesState}. ` : "";
+  outro(`${sessionsState}Task dispatch: ${tasks ? "on" : "off"}. Restart running agent sessions to apply.`);
 }

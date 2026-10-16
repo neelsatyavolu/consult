@@ -1,7 +1,8 @@
 {
   "name": "consult-mcp",
-  "version": "0.5.0",
-  "description": "MCP server that lets Claude Code, Codex and Grok ask each other for a second opinion through the CLIs already signed in on your machine",
+  "version": "1.0.2",
+  "mcpName": "io.github.neelsatyavolu/consult",
+  "description": "Get a second opinion on your code from every coding agent you have. Claude Code, Codex and Grok review each other's diffs and answer each other's questions, even inside a session that's already running. Uses the CLIs you're signed in to, no API keys.",
   "keywords": [
     "mcp",
     "mcp-server",
@@ -13,7 +14,7 @@
     "second-opinion",
     "code-review"
   ],
-  "homepage": "https://consult.n3el.dev",
+  "homepage": "https://getconsult.dev",
   "bugs": {
     "url": "https://github.com/neelsatyavolu/consult/issues"
   },
@@ -43,7 +44,8 @@
   },
   "os": [
     "darwin",
-    "linux"
+    "linux",
+    "win32"
   ],
   "dependencies": {
     "@clack/prompts": "^1.8.1",

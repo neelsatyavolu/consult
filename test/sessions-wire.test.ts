@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, saveSettings, settingsPath, withSessionsMode, type SessionsMode } from "../src/settings.js";
+import { DEFAULT_SETTINGS, saveSettings, settingsPath, withMessagesEnabled, withSessionsMode, type SessionsMode } from "../src/settings.js";
 import type { IdentityDeps } from "../src/sessions/identity.js";
 import { sessionTools, type WireOptions } from "../src/sessions/wire.js";
 import type { Runner } from "../src/types.js";
@@ -82,5 +82,21 @@ describe("sessionTools (serve wiring)", () => {
     stopA.abort();
     expect(b!.list()).toEqual([]);
     stopB.abort();
+  });
+
+  it("carries a message from one session to the other once messages are on", async () => {
+    const { root, env } = setup("repo");
+    const stop = new AbortController();
+    const plain = await sessionTools(options(env, root, { signal: stop.signal, identity: claudeIn("session-a") }));
+    expect(plain!.messages).toBeUndefined();
+
+    saveSettings(settingsPath(env), withMessagesEnabled(withSessionsMode(DEFAULT_SETTINGS, "repo"), true));
+    const a = await sessionTools(options(env, root, { pid: process.pid, signal: stop.signal, identity: claudeIn("session-a") }));
+    const b = await sessionTools(options(env, root, { pid: process.ppid, signal: stop.signal, identity: claudeIn("session-b") }));
+    expect((await a!.messages!.send("session-b", "main moved to e27f611")).delivery).toBe("inbox");
+    expect(a!.messages!.receive()).toBeUndefined();
+    expect(b!.messages!.receive()).toMatch(/From the claude session session-a[\s\S]*main moved to e27f611/);
+    expect(b!.messages!.receive()).toBeUndefined();
+    stop.abort();
   });
 });

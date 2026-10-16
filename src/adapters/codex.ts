@@ -16,9 +16,11 @@ const WORKSPACE_WRITE = [
 // Codex runs MCP tools outside its shell sandbox, so advisors and workers get none: plugins are switched off
 // (they bring their own MCP servers) and every server still enabled is disabled by name.
 // That includes consult itself, which is what stops agents from consulting each other in a loop.
-// Names are interpolated into `-c` overrides, so only bare keys are accepted. The JSON list also includes
-// each server's env, so a parse failure must not echo stdout.
-const SAFE_MCP_NAME = /^[A-Za-z0-9_-]+$/;
+// Names are interpolated into `-c mcp_servers.<name>.enabled=false`. Codex splits that key only on ".", so a
+// name with spaces is disabled as is, but one holding ".", "=", quotes, control characters or edge whitespace
+// would not reliably name the server, and is refused. The JSON list also includes each server's env, so a parse
+// failure must not echo stdout.
+const SAFE_MCP_NAME = /^[^\s.="'\x00-\x1f](?:[^.="'\x00-\x1f]*[^\s.="'\x00-\x1f])?$/;
 const MCP_LIST_UNREADABLE = "could not parse `codex mcp list --json`; refusing to run codex with its MCP servers still enabled";
 
 async function listEnabledMcpServers(run: Parameters<NonNullable<Adapter["prepare"]>>[0], cwd: string, signal?: AbortSignal) {

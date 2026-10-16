@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.neelsatyavolu/consult",
+  "description": "Get a second opinion on your code from every coding agent you have. No API keys.",
+  "repository": {
+    "url": "https://github.com/neelsatyavolu/consult",
+    "source": "github"
+  },
+  "websiteUrl": "https://getconsult.dev",
+  "version": "1.0.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "consult-mcp",
+      "version": "1.0.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve"
+        }
+      ]
+    }
+  ]
+}

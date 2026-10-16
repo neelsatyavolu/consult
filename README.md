@@ -4,9 +4,16 @@
 
 consult is an MCP server that lets Claude Code, Codex and Grok ask each other, and Google's Antigravity CLI, for advice through the CLIs already signed in on your machine. No API keys: each advisor runs on the subscription its CLI already uses.
 
-Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once. With [task dispatch](#task-dispatch) on, an agent can also hand a coding task to a Codex or Grok worker and follow its progress.
+Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once. Before calling work done, an agent can have the other vendors [review its diff](#review-your-changes) in one call, and so can you, from the terminal:
 
-[consult.n3el.dev](https://consult.n3el.dev) · [npm](https://www.npmjs.com/package/consult-mcp)
+```bash
+npx -y consult-mcp@latest review            # every installed advisor reviews your uncommitted changes
+npx -y consult-mcp@latest review --base main
+```
+
+With [live sessions](#live-sessions) on, agents can also ask the sessions you already have running and message them, and with [task dispatch](#task-dispatch) on, hand a coding task to a Codex or Grok worker and follow its progress.
+
+[getconsult.dev](https://getconsult.dev) · [npm](https://www.npmjs.com/package/consult-mcp)
 
 ## Install
 
@@ -26,7 +33,11 @@ To remove it:
 npx -y consult-mcp@latest uninstall
 ```
 
-Requirements: Node 22 or later, macOS or Linux, and at least one of the `claude`, `codex` or `grok` CLIs, signed in.
+Requirements: Node 22 or later on macOS, Linux or Windows, and at least one of the `claude`, `codex` or `grok` CLIs, signed in.
+
+On Windows, everything except [live sessions](#live-sessions) and [session messages](#session-messages) works: those find sessions with `ps` and `lsof` and deliver messages through POSIX shell hooks, so they stay off there. consult never runs an advisor through `cmd.exe`, which would reinterpret characters like `&` and `%` in a question: for a CLI installed as an npm `.cmd` shim it runs the script or binary the shim points at directly.
+
+Check the setup with `npx -y consult-mcp@latest doctor`. It reports each agent CLI and its version, whether consult is registered with it, your settings, the message hooks and whether agy's config is read-only, with a fix for each problem. `doctor --ask` also sends each advisor a one-word question, which shows that its CLI is signed in and can answer.
 
 <details>
 <summary>What install changes</summary>
@@ -36,6 +47,8 @@ Requirements: Node 22 or later, macOS or Linux, and at least one of the `claude`
 - **codex**: a `[mcp_servers.consult]` table in `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). It sets `tool_timeout_sec = 960` because Codex's 60s default is too short for an advisor call, and `startup_timeout_sec = 60` because a cold `npx` start can take longer than the default 10s. The previous file is kept as `config.toml.bak`. consult only writes the file if the result parses and every other setting is unchanged. Otherwise it stops and asks you to edit the file by hand.
 
 Each entry sets `PATH` to the directories holding the launcher (`npx` or `node`) and the agent CLIs, because some hosts start MCP servers with a minimal environment.
+
+With [session messages](#session-messages) on, install also adds consult's hooks to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's. The server started through `npx consult-mcp@latest` also rewrites consult's own Claude Code entries when they differ from the current release's, so hook fixes reach you without reinstalling.
 
 To pin to a specific build instead of following `@latest`, install globally with `npm i -g consult-mcp` and run `consult install`, or run `node dist/cli.js install` from a checkout. Hosts then launch that exact script.
 </details>
@@ -52,9 +65,13 @@ To pin to a specific build instead of following `@latest`, install globally with
 
 **`ask_agents`** `{agents, question, effort?, cwd?}` asks several advisors the same question in parallel and returns `{results: [...]}`, one entry per advisor. Each entry is either an answer with its own `session_id` or an `error`. One advisor failing doesn't fail the others.
 
+**`review_changes`** `{agents, base?, focus?, effort?, cwd?}` gets a code review of the git changes in `cwd` from each advisor in parallel. See [Review your changes](#review-your-changes).
+
 **`list_agents`** shows the installed CLIs, their versions and the model IDs each account can use.
 
 **`list_sessions`** and **`ask_session`** `{session_id, question, effort?}` appear when [live sessions](#live-sessions) are on.
+
+**`send_message`** `{session_id, message}` appears when [session messages](#session-messages) are on.
 
 **`dispatch_task`**, **`task_status`** and **`cancel_task`** appear when [task dispatch](#task-dispatch) is on.
 
@@ -71,6 +88,25 @@ The server's MCP instructions, which hosts add to the agent's context, tell it t
 
 The instructions also tell it to prefer an advisor from a different vendor, to write self-contained questions (the advisor can read the repo but not the conversation), and to check advice against the code before acting on it.
 
+## Review your changes
+
+consult collects the diff itself and sends it to each advisor with review instructions: find real bugs, regressions, security problems and broken contracts with the rest of the code, give severity, `file:line`, the failing scenario and a fix, skip style nits, and say so plainly when nothing is worth fixing. Advisors read the surrounding code to check their findings before reporting them, and stay read-only like any other advisor.
+
+- Without `base`, it reviews everything not yet committed: staged and unstaged changes against `HEAD`, plus the names of new untracked files, which advisors read directly.
+- With `base` (e.g. `main`), it reviews the branch since it left `base`, including uncommitted work (`git diff --merge-base main`).
+- `focus` adds what to look at especially, e.g. `"error handling in the retry path"`.
+
+It always reviews the whole repository, even from a subdirectory, and advisors run at the repository root. The question reaches each CLI as one command-line argument, so the diff is cut to fit: up to about 110 KB on Linux, 190 KB on macOS and 25 KB on Windows, whose command lines are shortest. The advisors are told to read the changed files for the rest. External diff, textconv, fsmonitor and clean/process filter commands are off, so collecting the diff runs nothing but git.
+
+From the shell, `consult review` uses every advisor CLI on your `PATH` unless you pass `--agents codex,grok`:
+
+```bash
+consult review --base main --focus "the new caching layer"
+consult review --agents codex --effort high > review.md
+```
+
+Progress goes to stderr and the reviews to stdout, one section per advisor, each with the command for a follow-up question in the same conversation. The command exits 1 only if every advisor failed.
+
 ## Live sessions
 
 Off by default. When on, agents can ask the agent sessions you already have running, not only fresh advisors. For example, the Codex session working on your API can ask the Claude Code session that wrote the client what it changed.
@@ -82,7 +118,7 @@ Turn it on when you install, or later:
 
 ```bash
 npx -y consult-mcp@latest install --sessions=repo   # or off, machine; without the flag, install asks when run in a terminal
-npx -y consult-mcp@latest settings                  # interactive: live sessions, task dispatch, and which agents use consult
+npx -y consult-mcp@latest settings                  # interactive: live sessions, messages, task dispatch, and which agents use consult
 ```
 
 | Setting | Who can see and ask whom |
@@ -98,6 +134,31 @@ Settings are stored in `$XDG_CONFIG_HOME/consult/settings.json` (default `~/.con
 | claude | the record Claude Code keeps for each running process (`~/.claude/sessions/<pid>.json`), so it follows `/resume` and `/clear`; `CLAUDE_CODE_SESSION_ID` as a fallback. Listed once the conversation is saved, after its first message |
 | codex | the `rollout-*.jsonl` file the codex process holds open, from the session's first turn on |
 | grok | the `~/.grok/sessions/<cwd>/<session id>/events.jsonl` file the interactive grok process holds open, from the session's first turn on; not identified if several sessions are open |
+
+## Session messages
+
+Off by default, and only available with live sessions on. `ask_session` asks a copy, so the session itself learns nothing. With messages on, an agent can tell a running session something. For example, the Claude Code session that just merged and pushed `main` can tell the Grok session with uncommitted edits in the same checkout which files changed under it.
+
+- **`send_message`** `{session_id, message}` leaves a message of up to 4,000 characters for a session from `list_sessions`. The receiving agent reads it in its own conversation, marked with the sending agent, session id, directory and branch, and with a note that it comes from a peer agent and is not an instruction from you. It can reply with its own `send_message`.
+
+Delivery uses each CLI's hooks, which `consult install` adds when messages are on, and for Codex its own `codex queue` command:
+
+| CLI | While it is working | While it is idle |
+| --- | --- | --- |
+| claude | read after its next tool call or when it finishes its turn | woken within a few seconds: a background hook (`asyncRewake`) started at the end of each turn waits for a message |
+| codex | read as its next prompt, after the current turn | woken at once: the message is queued with `codex queue` and starts a turn. If that command fails, the message waits for Codex's hooks, which only run once you have trusted them |
+| grok | read after its next tool call or when it finishes its turn | not woken: Grok has no way to start a turn from outside, so it reads the message after you prompt it |
+
+Waking a session starts a turn there without you, which uses that session's tokens and lets its agent act on the message. Nothing tells the sender that a message was read. A session without the hook still gets its messages with the reply to its next `list_sessions`, `ask_session` or `send_message` call. Unread messages are dropped after 24 hours; a session holds at most 20, and one session can send another at most 10 an hour.
+
+Turn it on when you install, or later:
+
+```bash
+npx -y consult-mcp@latest install --sessions=repo --messages=on
+npx -y consult-mcp@latest settings
+```
+
+Waiting messages are stored in `$XDG_STATE_HOME/consult/inbox/` (default `~/.local/state/consult/`), in files only you can read. The same `repo` and `machine` scopes decide who can message whom.
 
 ## Task dispatch
 
@@ -156,8 +217,10 @@ The same calls are available from the shell, which is handy for debugging:
 consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe under concurrent calls?"
 consult ask codex --resume <session_id> "What would you change first?"
 consult ask grok - < question.md      # long questions from a file or pipe
+consult review --base main            # every installed advisor reviews the branch
+consult doctor --ask                  # check the setup and that each advisor answers
 consult agents
-consult settings                      # live sessions, task dispatch, and which agents use consult
+consult settings                      # live sessions, messages, task dispatch, and which agents use consult
 ```
 
 Use `npx -y consult-mcp@latest <command>` if it isn't installed globally. Advisors are read-only here too: the same containment flags apply, so there is no need to tell them not to edit files. While one works, `consult ask` prints timestamped progress to stderr (commands run and messages for codex and grok, a heartbeat after 30 quiet seconds for any agent) and only the answer to stdout.
@@ -176,7 +239,7 @@ node dist/cli.js install              # register this checkout with your agents
 
 Releases: bump `version` in `package.json`, then push a matching tag (`git tag v0.3.0 && git push --tags`). The [release workflow](.github/workflows/release.yml) publishes to npm with provenance through npm trusted publishing, then creates the GitHub release. Everyone using `@latest` picks it up on their next agent session. Tags with a pre-release suffix (`v0.3.0-rc.1`) publish to the `next` dist-tag instead of `latest`.
 
-The landing page is in [`site/`](site) and deploys to [consult.n3el.dev](https://consult.n3el.dev) on Vercel.
+The landing page is in [`site/`](site) and deploys to [getconsult.dev](https://getconsult.dev) on Vercel. The old address, consult.n3el.dev, redirects there.
 
 ## License
 

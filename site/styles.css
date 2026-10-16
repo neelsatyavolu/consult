@@ -1,4 +1,4 @@
-/* consult.n3el.dev */
+/* getconsult.dev */
 
 :root {
   color-scheme: dark light;
@@ -432,6 +432,16 @@ h1 {
   margin-top: 36px;
 }
 
+.turn-grok .speaker {
+  color: var(--grok);
+}
+
+.turn-grok .body {
+  border-left: 2px solid var(--grok);
+  padding-left: 16px;
+  margin-left: -2px;
+}
+
 .turn-codex-ask .speaker {
   color: var(--codex);
 }
@@ -789,6 +799,7 @@ h3 {
     font-size: 16px;
   }
 
+  /* The section links wrap onto their own row under the brand instead of disappearing. */
   .nav {
     flex-wrap: wrap;
     row-gap: 12px;
@@ -808,6 +819,7 @@ h3 {
   }
 
   .turn-codex .body,
+  .turn-grok .body,
   .turn-claude-reply .body {
     margin-left: 0;
     padding-left: 14px;
@@ -836,6 +848,7 @@ h3 {
     gap: 10px;
   }
 
+  /* Wrap long commands: the scrollbar is hidden, so scrolling would clip them with no hint. */
   .command code {
     flex-basis: 100%;
     white-space: normal;

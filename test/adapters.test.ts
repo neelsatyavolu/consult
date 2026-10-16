@@ -142,6 +142,17 @@ describe("codex adapter", () => {
     });
     await expect(codex.prepare!(unsafe, "/repo")).rejects.toThrow(/cannot safely disable/);
   });
+
+  // Codex splits a -c key only on ".", so a name with spaces is disabled as is (checked against codex 0.162).
+  it("disables an enabled server whose name has spaces, and refuses names with dots, equals signs or quotes", async () => {
+    const list = (name: string) => async (): Promise<RunResult> => ({ stdout: JSON.stringify([{ name, enabled: true }]), stderr: "", code: 0 });
+    expect(await codex.prepare!(list("Parallel Search MCP"), "/repo")).toEqual([
+      "-c", "features.plugins=false", "-c", "mcp_servers.Parallel Search MCP.enabled=false",
+    ]);
+    for (const name of ["a.b", "a=b", 'a"b', "a'b", "line\nbreak", " leading", "trailing "]) {
+      await expect(codex.prepare!(list(name), "/repo"), name).rejects.toThrow(/cannot safely disable/);
+    }
+  });
 });
 
 describe("grok adapter", () => {

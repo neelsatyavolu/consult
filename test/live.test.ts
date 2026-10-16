@@ -1,6 +1,7 @@
 // Opt-in: talks to the real CLIs over the built MCP server. Run with `npm run build && npm run test:live`.
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +62,31 @@ describe.skipIf(!live)("live MCP server", () => {
       const { results } = res.structuredContent as { results: { agent: string; answer?: string; error?: string }[] };
       expect(results.map((r) => r.agent)).toEqual([...ADVISORS]);
       for (const r of results) expect(r.answer?.toLowerCase(), `${r.agent}: ${r.error}`).toContain("consult-mcp");
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+describe.skipIf(!live)("live review_changes", () => {
+  it("every advisor finds an obvious bug in an uncommitted change, and changes nothing", { timeout: 900_000 }, async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "consult-live-review-")));
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], { cwd: dir, encoding: "utf8" });
+    git("init", "-q", "-b", "main");
+    writeFileSync(join(dir, "average.js"), "export function average(xs) {\n  return xs.reduce((a, b) => a + b, 0) / xs.length;\n}\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "init");
+    // The bug: the loop skips the last element.
+    writeFileSync(join(dir, "average.js"), "export function average(xs) {\n  let sum = 0;\n  for (let i = 0; i < xs.length - 1; i++) sum += xs[i];\n  return sum / xs.length;\n}\n");
+    const before = git("status", "--porcelain");
+    const client = new Client({ name: "live-test", version: "0" });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, "dist/cli.js"), "serve"], cwd: dir }));
+    try {
+      const res = await client.callTool({ name: "review_changes", arguments: { agents: [...HOSTS] } }, undefined, { timeout: 900_000 });
+      const { results } = res.structuredContent as { results: { agent: string; answer?: string; error?: string }[] };
+      for (const r of results) expect(r.answer, `${r.agent}: ${r.error}`).toMatch(/last|length - 1|off[- ]by[- ]one|skip/i);
+      expect(git("status", "--porcelain")).toBe(before);
     } finally {
       await client.close();
     }

@@ -98,4 +98,55 @@ describe("session tools", () => {
     expect(res.isError).toBe(true);
     expect(text(res)).toMatch(/no live session s-9/);
   });
+
+  it("send_message is absent unless messages are on", async () => {
+    const client = await connect({ list: vi.fn(() => []), ask: vi.fn() });
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).not.toContain("send_message");
+    expect(client.getInstructions()).not.toMatch(/send_message/);
+  });
+
+  it("send_message queues the message and says delivery is not confirmed", async () => {
+    const send = vi.fn(async () => ({ messageId: "m-1", agent: "grok" as const, sessionId: "s-2", delivery: "inbox" as const }));
+    const client = await connect({ list: vi.fn(() => []), ask: vi.fn(), messages: { send, receive: () => undefined } });
+    expect(client.getInstructions()).toMatch(/send_message/);
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === "send_message")?.annotations).toMatchObject({ readOnlyHint: false });
+    const res = await client.callTool({ name: "send_message", arguments: { session_id: "s-2", message: "main moved" } });
+    expect(send).toHaveBeenCalledWith("s-2", "main moved");
+    expect(res.structuredContent).toEqual({ message_id: "m-1", agent: "grok", session_id: "s-2" });
+    expect(text(res)).toMatch(/Queued for the grok session s-2[\s\S]*idle Grok session reads it only once its user prompts[\s\S]*Nothing confirms/);
+  });
+
+  it("send_message says when the session is woken", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ messageId: "m-1", agent: "codex", sessionId: "s-2", delivery: "prompt" })
+      .mockResolvedValueOnce({ messageId: "m-2", agent: "claude", sessionId: "s-3", delivery: "inbox" });
+    const client = await connect({ list: vi.fn(() => []), ask: vi.fn(), messages: { send, receive: () => undefined } });
+    expect(text(await client.callTool({ name: "send_message", arguments: { session_id: "s-2", message: "hi" } }))).toMatch(/as its next prompt: at once if it is idle/);
+    expect(text(await client.callTool({ name: "send_message", arguments: { session_id: "s-3", message: "hi" } }))).toMatch(/if it is idle, it is woken/);
+  });
+
+  it("send_message rejects an over-long message and reports failures as tool errors", async () => {
+    const send = vi.fn(async () => {
+      throw new Error("no live session s-9 in scope");
+    });
+    const client = await connect({ list: vi.fn(() => []), ask: vi.fn(), messages: { send, receive: () => undefined } });
+    const long = await client.callTool({ name: "send_message", arguments: { session_id: "s-2", message: "x".repeat(4001) } });
+    expect(long.isError).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    const res = await client.callTool({ name: "send_message", arguments: { session_id: "s-9", message: "hi" } });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toMatch(/no live session s-9/);
+  });
+
+  it("adds this session's waiting messages to a session tool's reply", async () => {
+    const receive = vi.fn().mockReturnValueOnce("[consult] A message from another agent session").mockReturnValue(undefined);
+    const client = await connect({ list: vi.fn(() => []), ask: vi.fn(), messages: { send: vi.fn(), receive } });
+    const first = (await client.callTool({ name: "list_sessions", arguments: {} })) as { content: { text: string }[] };
+    expect(first.content.map((c) => c.text)).toEqual(["No other live sessions in scope.", "[consult] A message from another agent session"]);
+    const second = (await client.callTool({ name: "list_sessions", arguments: {} })) as { content: unknown[] };
+    expect(second.content).toHaveLength(1);
+  });
 });

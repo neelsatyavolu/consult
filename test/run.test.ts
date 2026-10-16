@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 
@@ -30,9 +31,12 @@ describe("run", () => {
     expect(r.stopped).toBeUndefined();
   });
 
+  // A child that starts a grandchild sharing its stdout: run() only resolves once both are gone.
+  const WITH_GRANDCHILD = `require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "inherit" }); setTimeout(() => {}, 10000);`;
+
   it("kills the process group on timeout", async () => {
     const started = Date.now();
-    const r = await run("sh", ["-c", "sleep 10 & sleep 10"], { cwd: "/", timeoutMs: 200 });
+    const r = await run(process.execPath, ["-e", WITH_GRANDCHILD], { cwd: tmpdir(), timeoutMs: 200 });
     expect(r.stopped).toBe("timeout");
     expect(Date.now() - started).toBeLessThan(3000);
   });
@@ -41,7 +45,7 @@ describe("run", () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
     const started = Date.now();
-    const r = await run("sh", ["-c", "sleep 10 & sleep 10"], { cwd: "/", timeoutMs: 10_000, signal: controller.signal });
+    const r = await run(process.execPath, ["-e", WITH_GRANDCHILD], { cwd: tmpdir(), timeoutMs: 10_000, signal: controller.signal });
     expect(r.stopped).toBe("aborted");
     expect(Date.now() - started).toBeLessThan(3000);
   });
@@ -62,5 +66,25 @@ describe("run", () => {
     await expect(run("definitely-not-a-cli", [], { cwd: "/", timeoutMs: 1000 })).rejects.toThrow(
       /definitely-not-a-cli.*not found/,
     );
+  });
+});
+
+// npm writes a real shim for a globally installed bin: a .cmd batch file on Windows, a symlink elsewhere. Running
+// through cmd.exe would mangle these arguments or run `calc`; run() must pass them through untouched.
+describe("run with an npm-installed CLI", () => {
+  it("passes every argument through exactly, with no shell in between", { timeout: 120_000 }, async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const pkg = mkdtempSync(join(tmpdir(), "consult-echo-pkg-"));
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "consult-echo-args", version: "1.0.0", bin: { "consult-echo-args": "index.js" } }));
+    writeFileSync(join(pkg, "index.js"), "#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
+    const prefix = mkdtempSync(join(tmpdir(), "consult-echo-prefix-"));
+    execFileSync("npm", ["install", "-g", "--prefix", prefix, "--no-audit", "--no-fund", pkg], { stdio: "pipe", shell: process.platform === "win32" });
+    const bin = process.platform === "win32" ? join(prefix, "consult-echo-args") : join(prefix, "bin", "consult-echo-args");
+    const args = ["plain", "a & calc", "x | y", "%PATH%", 'say "hi"', "line one\nline two", "^caret", "trailing\\", ""];
+    const r = await run(bin, args, { cwd: tmpdir(), timeoutMs: 60_000 });
+    expect(r.code, r.stderr).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual(args);
   });
 });

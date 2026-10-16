@@ -1,13 +1,16 @@
 import type { SessionToolDeps } from "../session-tools.js";
 import { loadSettings, settingsPath, type Settings } from "../settings.js";
+import { sessionsSupported, SESSIONS_UNSUPPORTED } from "../platform.js";
 import type { Runner } from "../types.js";
 import { codexIndexPath, describeSession } from "./describe.js";
 import { systemIdentityDeps, type IdentityDeps } from "./identity.js";
+import { claim, enqueue, inboxDir } from "./inbox.js";
 import { startLiveSession } from "./live.js";
 import { listLive, registryDir } from "./registry.js";
 import { createSessions, type SessionsDeps } from "./service.js";
 
 const REFRESH_MS = 15_000;
+const CODEX_QUEUE_TIMEOUT_MS = 30_000;
 
 export interface WireOptions {
   readonly run: Runner;
@@ -35,6 +38,10 @@ export async function sessionTools(opts: WireOptions): Promise<SessionToolDeps |
     return undefined;
   }
   if (!settings.sessions.enabled) return undefined;
+  if (!sessionsSupported()) {
+    opts.warn(SESSIONS_UNSUPPORTED);
+    return undefined;
+  }
 
   try {
     const dir = registryDir(opts.env);
@@ -49,14 +56,23 @@ export async function sessionTools(opts: WireOptions): Promise<SessionToolDeps |
       signal: opts.signal,
       warn: opts.warn,
     });
-    const { list, ask } = createSessions({
+    const inbox = inboxDir(opts.env);
+    const { list, ask, send, receive } = createSessions({
       self: live.self,
       settings: () => loadSettings(path),
       listLive: () => listLive(dir),
       describe: (entry) => describeSession(entry, codexIndex),
       askFork: opts.askFork,
+      enqueue: (recipient, from, text) => enqueue(inbox, recipient, from, text),
+      claim: (sessionId) => claim(inbox, sessionId),
+      promptCodex: async (target, framed) => {
+        const res = await opts
+          .run("codex", ["queue", "--thread", target.sessionId, "--message", framed], { cwd: target.cwd, timeoutMs: CODEX_QUEUE_TIMEOUT_MS })
+          .catch(() => undefined);
+        return res?.code === 0;
+      },
     });
-    return { list, ask };
+    return { list, ask, ...(settings.messages.enabled ? { messages: { send, receive } } : {}) };
   } catch (err) {
     opts.warn(`could not start live sessions: ${err instanceof Error ? err.message : String(err)}; live sessions are off for this session`);
     return undefined;

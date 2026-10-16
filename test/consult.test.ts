@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createConsult } from "../src/consult.js";
+import { maxCommandLine } from "../src/platform.js";
 import type { Adapter, AgentName, RunResult, Runner } from "../src/types.js";
 
+// A directory that exists on every platform.
+const TMP = realpathSync(tmpdir());
 const ok = (stdout = "OUT"): RunResult => ({ stdout, stderr: "", code: 0 });
 
 function fakeAdapter(name: AgentName, overrides: Partial<Adapter> = {}): Adapter {
@@ -26,12 +29,12 @@ function setup(run: Runner, adapter: Adapter = fakeAdapter("codex")) {
 describe("consult.ask", () => {
   it("runs the adapter's command in the caller's cwd and returns the parsed reply", async () => {
     const run = vi.fn<Runner>(async () => ok("raw"));
-    const result = await setup(run).ask({ agent: "codex", question: "Is this safe?", cwd: "/tmp" });
+    const result = await setup(run).ask({ agent: "codex", question: "Is this safe?", cwd: TMP });
     expect(result).toMatchObject({ agent: "codex", answer: "answer:raw", sessionId: "sid-1", model: "m-1" });
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
     const [cmd, args, opts] = run.mock.calls[0]!;
     expect(cmd).toBe("codex");
-    expect(opts).toMatchObject({ cwd: "/tmp", timeoutMs: 1000 });
+    expect(opts).toMatchObject({ cwd: TMP, timeoutMs: 1000 });
     const prompt = args.at(-1)!;
     expect(prompt).toContain("Is this safe?");
     expect(prompt).toMatch(/read-only/i);
@@ -44,21 +47,28 @@ describe("consult.ask", () => {
     });
     const adapter = fakeAdapter("codex", { describe: (e) => (typeof e.say === "string" ? e.say : undefined) });
     const updates: string[] = [];
-    const result = await setup(run, adapter).ask({ agent: "codex", question: "q", cwd: "/tmp" }, undefined, (t) => updates.push(t));
+    const result = await setup(run, adapter).ask({ agent: "codex", question: "q", cwd: TMP }, undefined, (t) => updates.push(t));
     expect(updates).toEqual(["$ rg retry"]);
     expect(result.answer).toBe('answer:{"say":"$ rg retry"}\nnoise\n{"quiet":true}\nfinal');
   });
 
   it("does not stream when the adapter can't describe its output", async () => {
     const run = vi.fn<Runner>(async () => ok("raw"));
-    const result = await setup(run).ask({ agent: "codex", question: "q", cwd: "/tmp" }, undefined, () => {});
+    const result = await setup(run).ask({ agent: "codex", question: "q", cwd: TMP }, undefined, () => {});
     expect(run.mock.calls[0]![2].onStdoutLine).toBeUndefined();
     expect(result.answer).toBe("answer:raw");
   });
 
+  it("refuses a question too long for one command-line argument, without running anything", async () => {
+    const run = vi.fn<Runner>(async () => ok());
+    const question = "é".repeat(maxCommandLine());
+    await expect(setup(run).ask({ agent: "codex", question, cwd: TMP })).rejects.toThrow(/too long.*point the advisor at files/);
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("frames follow-ups without repeating the advisor briefing", async () => {
     const run = vi.fn<Runner>(async () => ok());
-    await setup(run).ask({ agent: "codex", question: "-and what about X?", cwd: "/tmp", sessionId: "sid-1" });
+    await setup(run).ask({ agent: "codex", question: "-and what about X?", cwd: TMP, sessionId: "sid-1" });
     const prompt = run.mock.calls[0]![1].at(-1)!;
     expect(prompt).toMatch(/^Follow-up/);
     expect(prompt).toContain("-and what about X?");
@@ -67,7 +77,7 @@ describe("consult.ask", () => {
 
   it("reports a non-zero exit with the tail of stderr", async () => {
     const run = vi.fn<Runner>(async () => ({ stdout: "", stderr: "x".repeat(5000) + "Please log in", code: 2 }));
-    const err = await setup(run).ask({ agent: "codex", question: "q", cwd: "/tmp" }).catch((e: Error) => e);
+    const err = await setup(run).ask({ agent: "codex", question: "q", cwd: TMP }).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toMatch(/codex exited with code 2/);
     expect((err as Error).message).toContain("Please log in");
@@ -76,13 +86,13 @@ describe("consult.ask", () => {
 
   it("reports a timeout", async () => {
     const run = vi.fn<Runner>(async () => ({ stdout: "", stderr: "", code: null, stopped: "timeout" }));
-    await expect(setup(run).ask({ agent: "grok", question: "q", cwd: "/tmp" })).rejects.toThrow(/grok timed out after 1s/);
+    await expect(setup(run).ask({ agent: "grok", question: "q", cwd: TMP })).rejects.toThrow(/grok timed out after 1s/);
   });
 
   it("rejects an empty question and a missing cwd before running anything", async () => {
     const run = vi.fn<Runner>(async () => ok());
     const consult = setup(run);
-    await expect(consult.ask({ agent: "claude", question: "   ", cwd: "/tmp" })).rejects.toThrow(/question/);
+    await expect(consult.ask({ agent: "claude", question: "   ", cwd: TMP })).rejects.toThrow(/question/);
     await expect(consult.ask({ agent: "claude", question: "q", cwd: "/no/such/dir" })).rejects.toThrow(/cwd/);
     expect(run).not.toHaveBeenCalled();
   });
@@ -92,29 +102,29 @@ describe("consult.ask", () => {
     const prepare = vi.fn<NonNullable<Adapter["prepare"]>>(async () => ["--extra"]);
     const run = vi.fn<Runner>(async () => ok());
     const consult = setup(run, fakeAdapter("codex", { prepare }));
-    await consult.ask({ agent: "codex", question: "a", cwd: "/tmp" });
+    await consult.ask({ agent: "codex", question: "a", cwd: TMP });
     await consult.ask({ agent: "codex", question: "b", cwd: "/" });
-    expect(prepare.mock.calls.map((c) => c[1])).toEqual(["/tmp", "/"]);
+    expect(prepare.mock.calls.map((c) => c[1])).toEqual([TMP, "/"]);
     expect(run.mock.calls[1]![1][0]).toBe("--extra");
   });
 
   it("does not run the advisor when prepare fails", async () => {
     const prepare = vi.fn(async () => { throw new Error("list failed"); });
     const run = vi.fn<Runner>(async () => ok());
-    await expect(setup(run, fakeAdapter("codex", { prepare })).ask({ agent: "codex", question: "a", cwd: "/tmp" })).rejects.toThrow(/list failed/);
+    await expect(setup(run, fakeAdapter("codex", { prepare })).ask({ agent: "codex", question: "a", cwd: TMP })).rejects.toThrow(/list failed/);
     expect(run).not.toHaveBeenCalled();
   });
 
   it("passes the cancellation signal to the advisor process and reports cancellation", async () => {
     const run = vi.fn<Runner>(async () => ({ stdout: "", stderr: "", code: null, stopped: "aborted" }));
     const signal = new AbortController().signal;
-    await expect(setup(run).ask({ agent: "claude", question: "q", cwd: "/tmp" }, signal)).rejects.toThrow(/claude call was cancelled/);
+    await expect(setup(run).ask({ agent: "claude", question: "q", cwd: TMP }, signal)).rejects.toThrow(/claude call was cancelled/);
     expect(run.mock.calls[0]![2].signal).toBe(signal);
   });
 
   it("reports an advisor that produced too much output", async () => {
     const run = vi.fn<Runner>(async () => ({ stdout: "", stderr: "", code: null, stopped: "output_limit" }));
-    await expect(setup(run).ask({ agent: "codex", question: "q", cwd: "/tmp" })).rejects.toThrow(/codex produced too much output/);
+    await expect(setup(run).ask({ agent: "codex", question: "q", cwd: TMP })).rejects.toThrow(/codex produced too much output/);
   });
 });
 

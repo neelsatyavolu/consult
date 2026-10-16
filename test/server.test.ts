@@ -141,4 +141,45 @@ describe("MCP server", () => {
     expect(updates.map((u) => u.progress)).toEqual([...updates.map((u) => u.progress)].sort((a, b) => a - b));
     expect(updates[0]!.message).toMatch(/codex/);
   });
+
+  describe("review_changes", () => {
+    const changes = { root: "/other-root", stat: " a.ts | 1 +", diff: "diff --git a/a.ts b/a.ts\n+x", untracked: [], truncated: false };
+    const answer = (agent: "codex" | "grok") => ({ agent, answer: `${agent} found nothing`, sessionId: `${agent}-1`, durationMs: 5 });
+
+    it("is only offered when the server can collect changes", async () => {
+      const without = await connect({ ask: vi.fn(), listAgents: vi.fn(), defaultCwd: "/repo" });
+      expect((await without.listTools()).tools.map((t) => t.name)).not.toContain("review_changes");
+      const withIt = await connect({ ask: vi.fn(), listAgents: vi.fn(), defaultCwd: "/repo", collectChanges: vi.fn() });
+      expect((await withIt.listTools()).tools.map((t) => t.name)).toContain("review_changes");
+      expect(withIt.getInstructions()).toMatch(/review_changes/);
+    });
+
+    it("sends each advisor the diff with review instructions, at the repository root", async () => {
+      const collectChanges = vi.fn(async () => changes);
+      const ask = vi.fn(async (r: AskRequest) => answer(r.agent as "codex" | "grok"));
+      const client = await connect({ ask, listAgents: vi.fn(), defaultCwd: "/repo", collectChanges });
+      const res = await client.callTool({ name: "review_changes", arguments: { agents: ["codex", "grok"], base: "main", focus: "auth", cwd: "/other" } });
+      expect(collectChanges).toHaveBeenCalledWith("/other", "main", expect.any(AbortSignal));
+      expect(ask).toHaveBeenCalledTimes(2);
+      const request = ask.mock.calls[0]![0];
+      expect(request.cwd).toBe("/other-root");
+      expect(request.question).toContain("+x");
+      expect(request.question).toContain("Focus especially on: auth");
+      expect(res.isError).toBeFalsy();
+      expect(text(res)).toContain("codex found nothing");
+      expect(text(res)).toContain("grok found nothing");
+    });
+
+    it("reports a git problem without asking anyone", async () => {
+      const ask = vi.fn();
+      const collectChanges = vi.fn(async () => {
+        throw new Error("no changes to review: the working tree matches HEAD");
+      });
+      const client = await connect({ ask, listAgents: vi.fn(), defaultCwd: "/repo", collectChanges });
+      const res = await client.callTool({ name: "review_changes", arguments: { agents: ["codex"] } });
+      expect(res.isError).toBe(true);
+      expect(text(res)).toMatch(/no changes to review/);
+      expect(ask).not.toHaveBeenCalled();
+    });
+  });
 });

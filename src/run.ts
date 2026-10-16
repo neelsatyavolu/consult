@@ -1,9 +1,35 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { join } from "node:path";
+import { resolveForSpawn } from "./platform.js";
 import { StringDecoder } from "node:string_decoder";
 import type { RunOptions, RunResult, StopReason } from "./types.js";
 
 const KILL_GRACE_MS = 3000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+const WINDOWS = process.platform === "win32";
+/** By full path: Windows looks for a bare name in the current directory first, which may be an untrusted repository. */
+const TASKKILL = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe");
+
+/**
+ * Kills the process and everything it started: its process group on macOS and Linux, its process tree (taskkill)
+ * on Windows, which has no process groups and no signals to send them.
+ */
+function killTree(pid: number, sig: NodeJS.Signals, sync = false): void {
+  if (WINDOWS) {
+    // Console programs ignore a polite taskkill, so every stop is forced.
+    const args = ["/pid", String(pid), "/T", "/F"];
+    const opts = { stdio: "ignore", windowsHide: true } as const;
+    if (sync) spawnSync(TASKKILL, args, opts);
+    else spawn(TASKKILL, args, opts).on("error", () => {});
+    return;
+  }
+  try {
+    process.kill(-pid, sig);
+  } catch {
+    // Group already exited.
+  }
+}
 
 // A signal handler that calls process.exit() skips the SIGKILL grace timers, so groups still running then are
 // killed synchronously on the way out.
@@ -13,13 +39,7 @@ function trackGroup(pid: number): void {
   if (!exitHookInstalled) {
     exitHookInstalled = true;
     process.once("exit", () => {
-      for (const group of liveGroups) {
-        try {
-          process.kill(-group, "SIGKILL");
-        } catch {
-          // Group already exited.
-        }
-      }
+      for (const group of liveGroups) killTree(group, "SIGKILL", true);
     });
   }
   liveGroups.add(pid);
@@ -60,7 +80,15 @@ export function run(
   if (signal?.aborted) return Promise.resolve({ stdout: "", stderr: "", code: null, stopped: "aborted" });
 
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    let target;
+    try {
+      target = resolveForSpawn(command, args);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    // detached gives the child its own process group; on Windows it would open a console window instead.
+    const child = spawn(target.command, target.args, { cwd, stdio: ["ignore", "pipe", "pipe"], detached: !WINDOWS, windowsHide: true });
     if (child.pid) trackGroup(child.pid);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -69,11 +97,7 @@ export function run(
     let graceTimer: NodeJS.Timeout | undefined;
 
     const killGroup = (sig: NodeJS.Signals) => {
-      try {
-        if (child.pid) process.kill(-child.pid, sig);
-      } catch {
-        // Group already exited.
-      }
+      if (child.pid) killTree(child.pid, sig);
     };
     const stop = (reason: StopReason) => {
       if (stopped) return;
@@ -111,8 +135,9 @@ export function run(
     });
     child.on("close", (code) => {
       cleanup();
-      // Leftover grandchildren keep the group alive; take them down now instead of after the grace period.
-      if (stopped) killGroup("SIGKILL");
+      // Leftover grandchildren keep the group alive; take them down now instead of after the grace period. On
+      // Windows the forced tree kill already took them, and the pid may since belong to another process.
+      if (stopped && !WINDOWS) killGroup("SIGKILL");
       resolve({
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),

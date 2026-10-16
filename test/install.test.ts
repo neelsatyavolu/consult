@@ -1,3 +1,5 @@
+import { existsSync as existsSyncForWindows } from "node:fs";
+import { findWindowsCommand } from "../src/platform.js";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -202,7 +204,9 @@ describe("uninstall", () => {
   });
 });
 
-describe("findOnPath", () => {
+const WINDOWS = process.platform === "win32";
+
+describe.skipIf(WINDOWS)("findOnPath", () => {
   it("returns the first executable match without resolving symlinks", () => {
     const real = binDir(["node"]);
     const shims = mkdtempSync(join(tmpdir(), "consult-shim-"));
@@ -212,7 +216,7 @@ describe("findOnPath", () => {
   });
 });
 
-describe("serverCommand", () => {
+describe.skipIf(WINDOWS)("serverCommand", () => {
   it("pins a local checkout to node and the script, with a minimal PATH", () => {
     const a = binDir(["node", "claude"]);
     const b = binDir(["codex"]);
@@ -239,6 +243,32 @@ describe("serverCommand", () => {
 
   it("fails clearly when node is not on PATH", () => {
     expect(() => serverCommand("/x/cli.js", binDir(["claude"]))).toThrow(/node not found/);
+  });
+});
+
+// Runs against the CI runner's own node and npx.
+describe.runIf(WINDOWS)("on Windows", () => {
+  const PATH = process.env.PATH ?? "";
+
+  it("finds commands with their PATHEXT extension", () => {
+    expect(findOnPath("node", PATH)?.toLowerCase()).toMatch(/node\.exe$/);
+    expect(findOnPath("npx", PATH)?.toLowerCase()).toMatch(/npx\.cmd$/);
+  });
+
+  it("launches npx's script with node instead of the npx.cmd batch file", () => {
+    const script = join(tmpdir(), "npm-cache", "_npx", "abc", "node_modules", "consult-mcp", "dist", "cli.js");
+    const cmd = serverCommand(script, PATH);
+    expect(cmd.command.toLowerCase()).toMatch(/node\.exe$/);
+    expect(cmd.args[0]!.toLowerCase()).toMatch(/npx-cli\.js$/);
+    expect(cmd.args.slice(1)).toEqual(["-y", "consult-mcp@latest", "serve"]);
+    expect(cmd.path.toLowerCase()).toContain("system32");
+    // review_changes runs git from the server, whose PATH is only this.
+    expect(findWindowsCommand("git", { PATH: cmd.path }, existsSyncForWindows)).toBeDefined();
+  });
+
+  it("pins a local checkout to node and the script", () => {
+    const cmd = serverCommand("C:\\x\\cli.js", PATH);
+    expect(cmd.args).toEqual(["C:\\x\\cli.js", "serve"]);
   });
 });
 
