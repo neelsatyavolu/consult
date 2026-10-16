@@ -73,6 +73,15 @@ describe("diagnose", () => {
     expect(offHook).not.toHaveBeenCalled();
   });
 
+  it("on Windows, warns that live sessions are off instead of checking hooks", async () => {
+    const on = withMessagesEnabled(withSessionsMode(DEFAULT_SETTINGS, "repo"), true);
+    const hasMessageHook = vi.fn(() => false);
+    const checks = await diagnose(deps({ loadSettings: () => on, hasMessageHook, sessionsSupported: false }));
+    expect(failures(checks)).toEqual([]);
+    expect(checks.some((c) => c.status === "warn" && /off on this platform/.test(c.label))).toBe(true);
+    expect(hasMessageHook).not.toHaveBeenCalled();
+  });
+
   it("with ping, asks every installed advisor and reports who answered", async () => {
     const ping = vi.fn(async (agent: string) => {
       if (agent === "grok") throw new AdvisorError("grok exited with code 1: not logged in");

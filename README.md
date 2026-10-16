@@ -33,7 +33,9 @@ To remove it:
 npx -y consult-mcp@latest uninstall
 ```
 
-Requirements: Node 22 or later, macOS or Linux, and at least one of the `claude`, `codex` or `grok` CLIs, signed in.
+Requirements: Node 22 or later on macOS, Linux or Windows, and at least one of the `claude`, `codex` or `grok` CLIs, signed in.
+
+On Windows, everything except [live sessions](#live-sessions) and [session messages](#session-messages) works: those find sessions with `ps` and `lsof` and deliver messages through POSIX shell hooks, so they stay off there. consult never runs an advisor through `cmd.exe`, which would reinterpret characters like `&` and `%` in a question: for a CLI installed as an npm `.cmd` shim it runs the script or binary the shim points at directly.
 
 Check the setup with `npx -y consult-mcp@latest doctor`. It reports each agent CLI and its version, whether consult is registered with it, your settings, the message hooks and whether agy's config is read-only, with a fix for each problem. `doctor --ask` also sends each advisor a one-word question, which shows that its CLI is signed in and can answer.
 
@@ -94,7 +96,7 @@ consult collects the diff itself and sends it to each advisor with review instru
 - With `base` (e.g. `main`), it reviews the branch since it left `base`, including uncommitted work (`git diff --merge-base main`).
 - `focus` adds what to look at especially, e.g. `"error handling in the retry path"`.
 
-Diffs over 150,000 characters are cut, and the advisors are told to read the changed files for the rest. External diff and textconv drivers are off, so collecting the diff runs nothing but git.
+It always reviews the whole repository, even from a subdirectory, and advisors run at the repository root. The question reaches each CLI as one command-line argument, so the diff is cut to fit: at up to about 110 KB on macOS and Linux and 20 KB on Windows, whose command lines are shorter. The advisors are told to read the changed files for the rest. External diff, textconv and fsmonitor commands are off, so collecting the diff runs nothing but git.
 
 From the shell, `consult review` uses every advisor CLI on your `PATH` unless you pass `--agents codex,grok`:
 

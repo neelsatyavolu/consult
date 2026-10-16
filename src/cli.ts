@@ -171,7 +171,7 @@ async function askCommand(argv: readonly string[]): Promise<void> {
         effort: values.effort as Effort | undefined,
         sessionId: values.resume,
       },
-      undefined,
+      interruptSignal(),
       progress.update,
     );
   } finally {
@@ -196,6 +196,18 @@ function parseAgents(list: string | undefined): readonly AgentName[] {
   return agents as AgentName[];
 }
 
+/** Aborts on Ctrl-C or SIGTERM, so advisors in their own process groups stop with the command. */
+function interruptSignal(): AbortSignal {
+  const controller = new AbortController();
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.once(sig, () => {
+      controller.abort();
+      process.exitCode = 130;
+    });
+  }
+  return controller.signal;
+}
+
 async function reviewCommand(argv: readonly string[]): Promise<void> {
   const { values } = parseArgs({
     args: [...argv],
@@ -203,31 +215,36 @@ async function reviewCommand(argv: readonly string[]): Promise<void> {
   });
   if (values.effort && !EFFORTS.includes(values.effort as Effort)) throw new Error(`effort must be one of ${EFFORTS.join(", ")}`);
   const agents = parseAgents(values.agents);
-  const cwd = values.cwd ?? process.cwd();
-  const changes = await collectChanges(run, cwd, values.base);
+  const { ask } = consult();
+  const signal = interruptSignal();
+  const changes = await collectChanges(run, values.cwd ?? process.cwd(), values.base, signal);
   const question = reviewQuestion(changes, values.focus);
   const pending = new Set(agents);
   const progress = progressLog((line) => process.stderr.write(line), () => `waiting on ${[...pending].join(", ")}`, HEARTBEAT_MS);
   progress.update(`reviewing ${changes.base ? `changes since ${changes.base}` : "uncommitted changes"} with ${agents.join(", ")} (read-only)`);
-  const { ask } = consult();
-  const entries = await Promise.all(
-    agents.map(async (agent) => {
-      try {
-        const result = await ask({ agent, question, cwd, effort: values.effort as Effort | undefined }, undefined, (text) => progress.update(`${agent}: ${text}`));
-        progress.update(`${agent} finished in ${(result.durationMs / 1000).toFixed(0)}s`);
-        return { agent, result };
-      } catch (err) {
-        progress.update(`${agent} failed`);
-        return { agent, error: errorMessage(err) };
-      } finally {
-        pending.delete(agent);
-      }
-    }),
-  );
-  progress.stop();
+  let entries;
+  try {
+    entries = await Promise.all(
+      agents.map(async (agent) => {
+        try {
+          const request = { agent, question, cwd: changes.root, effort: values.effort as Effort | undefined };
+          const result = await ask(request, signal, (text) => progress.update(`${agent}: ${text}`));
+          progress.update(`${agent} finished in ${(result.durationMs / 1000).toFixed(0)}s`);
+          return { agent, result };
+        } catch (err) {
+          progress.update(`${agent} failed`);
+          return { agent, error: errorMessage(err) };
+        } finally {
+          pending.delete(agent);
+        }
+      }),
+    );
+  } finally {
+    progress.stop();
+  }
   const sections = entries.map((e) =>
     "result" in e && e.result
-      ? `## ${e.agent}${e.result.model ? ` (${e.result.model})` : ""}\n\n${e.result.answer}\n\n[session ${e.result.sessionId}: consult ask ${e.agent} --resume ${e.result.sessionId} "..."]`
+      ? `## ${e.agent}${e.result.model ? ` (${e.result.model})` : ""}\n\n${e.result.answer}\n\n[session ${e.result.sessionId}: consult ask ${e.agent} --resume ${e.result.sessionId} --cwd ${JSON.stringify(changes.root)} "..."]`
       : `## ${e.agent}\n\nFailed: ${"error" in e ? e.error : "unknown error"}`,
   );
   process.stdout.write(`${sections.join("\n\n")}\n`);
@@ -243,6 +260,7 @@ async function doctorCommand(argv: readonly string[]): Promise<void> {
     isRegistered: (agent) => isRegistered(run, agent),
     loadSettings: () => loadSettings(settingsPath()),
     hasMessageHook: (agent) => hasConsultHook(agent),
+    sessionsSupported: sessionsSupported(),
     agyContainment: async () => {
       await agy.prepare?.(run, process.cwd());
     },

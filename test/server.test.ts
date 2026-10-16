@@ -143,7 +143,7 @@ describe("MCP server", () => {
   });
 
   describe("review_changes", () => {
-    const changes = { stat: " a.ts | 1 +", diff: "diff --git a/a.ts b/a.ts\n+x", untracked: [], truncated: false };
+    const changes = { root: "/other-root", stat: " a.ts | 1 +", diff: "diff --git a/a.ts b/a.ts\n+x", untracked: [], truncated: false };
     const answer = (agent: "codex" | "grok") => ({ agent, answer: `${agent} found nothing`, sessionId: `${agent}-1`, durationMs: 5 });
 
     it("is only offered when the server can collect changes", async () => {
@@ -154,7 +154,7 @@ describe("MCP server", () => {
       expect(withIt.getInstructions()).toMatch(/review_changes/);
     });
 
-    it("sends each advisor the diff with review instructions, in the right cwd", async () => {
+    it("sends each advisor the diff with review instructions, at the repository root", async () => {
       const collectChanges = vi.fn(async () => changes);
       const ask = vi.fn(async (r: AskRequest) => answer(r.agent as "codex" | "grok"));
       const client = await connect({ ask, listAgents: vi.fn(), defaultCwd: "/repo", collectChanges });
@@ -162,7 +162,7 @@ describe("MCP server", () => {
       expect(collectChanges).toHaveBeenCalledWith("/other", "main", expect.any(AbortSignal));
       expect(ask).toHaveBeenCalledTimes(2);
       const request = ask.mock.calls[0]![0];
-      expect(request.cwd).toBe("/other");
+      expect(request.cwd).toBe("/other-root");
       expect(request.question).toContain("+x");
       expect(request.question).toContain("Focus especially on: auth");
       expect(res.isError).toBeFalsy();
