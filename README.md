@@ -4,7 +4,14 @@
 
 consult is an MCP server that lets Claude Code, Codex and Grok ask each other, and Google's Antigravity CLI, for advice through the CLIs already signed in on your machine. No API keys: each advisor runs on the subscription its CLI already uses.
 
-Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once. With [task dispatch](#task-dispatch) on, an agent can also hand a coding task to a Codex or Grok worker and follow its progress.
+Claude Code on Opus can ask Codex on GPT-6 Astra to review a plan, Codex can ask Grok why a test is flaky, or any of them can put one question to all the others at once. Before calling work done, an agent can have the other vendors [review its diff](#review-your-changes) in one call, and so can you, from the terminal:
+
+```bash
+npx -y consult-mcp@latest review            # every installed advisor reviews your uncommitted changes
+npx -y consult-mcp@latest review --base main
+```
+
+With [live sessions](#live-sessions) on, agents can also ask the sessions you already have running and message them, and with [task dispatch](#task-dispatch) on, hand a coding task to a Codex or Grok worker and follow its progress.
 
 [consult.n3el.dev](https://consult.n3el.dev) · [npm](https://www.npmjs.com/package/consult-mcp)
 
@@ -27,6 +34,8 @@ npx -y consult-mcp@latest uninstall
 ```
 
 Requirements: Node 22 or later, macOS or Linux, and at least one of the `claude`, `codex` or `grok` CLIs, signed in.
+
+Check the setup with `npx -y consult-mcp@latest doctor`. It reports each agent CLI and its version, whether consult is registered with it, your settings, the message hooks and whether agy's config is read-only, with a fix for each problem. `doctor --ask` also sends each advisor a one-word question, which shows that its CLI is signed in and can answer.
 
 <details>
 <summary>What install changes</summary>
@@ -54,6 +63,8 @@ To pin to a specific build instead of following `@latest`, install globally with
 
 **`ask_agents`** `{agents, question, effort?, cwd?}` asks several advisors the same question in parallel and returns `{results: [...]}`, one entry per advisor. Each entry is either an answer with its own `session_id` or an `error`. One advisor failing doesn't fail the others.
 
+**`review_changes`** `{agents, base?, focus?, effort?, cwd?}` gets a code review of the git changes in `cwd` from each advisor in parallel. See [Review your changes](#review-your-changes).
+
 **`list_agents`** shows the installed CLIs, their versions and the model IDs each account can use.
 
 **`list_sessions`** and **`ask_session`** `{session_id, question, effort?}` appear when [live sessions](#live-sessions) are on.
@@ -74,6 +85,25 @@ The server's MCP instructions, which hosts add to the agent's context, tell it t
 - it is unsure and being wrong is costly.
 
 The instructions also tell it to prefer an advisor from a different vendor, to write self-contained questions (the advisor can read the repo but not the conversation), and to check advice against the code before acting on it.
+
+## Review your changes
+
+consult collects the diff itself and sends it to each advisor with review instructions: find real bugs, regressions, security problems and broken contracts with the rest of the code, give severity, `file:line`, the failing scenario and a fix, skip style nits, and say so plainly when nothing is worth fixing. Advisors read the surrounding code to check their findings before reporting them, and stay read-only like any other advisor.
+
+- Without `base`, it reviews everything not yet committed: staged and unstaged changes against `HEAD`, plus the names of new untracked files, which advisors read directly.
+- With `base` (e.g. `main`), it reviews the branch since it left `base`, including uncommitted work (`git diff --merge-base main`).
+- `focus` adds what to look at especially, e.g. `"error handling in the retry path"`.
+
+Diffs over 150,000 characters are cut, and the advisors are told to read the changed files for the rest. External diff and textconv drivers are off, so collecting the diff runs nothing but git.
+
+From the shell, `consult review` uses every advisor CLI on your `PATH` unless you pass `--agents codex,grok`:
+
+```bash
+consult review --base main --focus "the new caching layer"
+consult review --agents codex --effort high > review.md
+```
+
+Progress goes to stderr and the reviews to stdout, one section per advisor, each with the command for a follow-up question in the same conversation. The command exits 1 only if every advisor failed.
 
 ## Live sessions
 
@@ -185,6 +215,8 @@ The same calls are available from the shell, which is handy for debugging:
 consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe under concurrent calls?"
 consult ask codex --resume <session_id> "What would you change first?"
 consult ask grok - < question.md      # long questions from a file or pipe
+consult review --base main            # every installed advisor reviews the branch
+consult doctor --ask                  # check the setup and that each advisor answers
 consult agents
 consult settings                      # live sessions, messages, task dispatch, and which agents use consult
 ```

@@ -112,7 +112,7 @@
 
     <section id="tools" class="section wrap" aria-labelledby="tools-title">
       <div class="section-head">
-        <h2 id="tools-title">Three tools your agent can call</h2>
+        <h2 id="tools-title">Four tools your agent can call</h2>
         <p>Advisors get read-only access to the repo, so your agent points at files instead of pasting them. Progress streams back while they think. Most calls finish in under a minute and none run past 15.</p>
       </div>
 
@@ -124,6 +124,10 @@
         <div class="tool">
           <dt><code><span class="fn">ask_agents</span>(agents[], question, effort?, cwd?)</code></dt>
           <dd>Ask a panel. Two or more advisors work in parallel and their answers come back side by side, so you can see where they agree and where they don’t.</dd>
+        </div>
+        <div class="tool">
+          <dt><code><span class="fn">review_changes</span>(agents[], base?, focus?, effort?, cwd?)</code></dt>
+          <dd>Get the diff reviewed before calling it done. consult collects the uncommitted changes, or the branch since <code>base</code>, and each advisor returns findings with severity, <code>file:line</code> and a fix.</dd>
         </div>
         <div class="tool">
           <dt><code><span class="fn">list_agents</span>()</code></dt>
@@ -335,11 +339,12 @@
     <section class="section wrap" aria-labelledby="cli-title">
       <div class="section-head">
         <h2 id="cli-title">Ask from your own terminal</h2>
-        <p>Install it globally with <code>npm i -g consult-mcp</code> and the same advisors answer you directly.</p>
+        <p>Install it globally with <code>npm i -g consult-mcp</code> and the same advisors answer you directly. <code>consult review</code> has every advisor you have installed review your changes before you commit, and <code>consult doctor</code> checks the whole setup.</p>
       </div>
       <pre class="shell"><code><span class="prompt">$</span> consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe?"
 <span class="prompt">$</span> consult ask codex --resume &lt;session_id&gt; "What would you change first?"
-<span class="prompt">$</span> consult agents
+<span class="prompt">$</span> consult review --base main
+<span class="prompt">$</span> consult doctor --ask
 <span class="prompt">$</span> consult settings</code></pre>
     </section>
   </main>
