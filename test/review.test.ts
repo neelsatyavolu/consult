@@ -31,7 +31,7 @@ describe("collectChanges", () => {
     expect(changes.stat).toContain("a.ts");
     expect(changes.untracked).toEqual(["new.ts"]);
     expect(changes.truncated).toBe(false);
-    expect(changes.root).toBe(dir);
+    expect(realpathSync.native(changes.root)).toBe(realpathSync.native(dir));
   });
 
   it("covers the whole repository from a subdirectory, with root-relative paths", async () => {
@@ -41,7 +41,7 @@ describe("collectChanges", () => {
     writeFileSync(join(dir, "top-new.ts"), "1\n");
     writeFileSync(join(dir, "pkg", "inner.ts"), "1\n");
     const changes = await collectChanges(run, join(dir, "pkg"));
-    expect(changes.root).toBe(dir);
+    expect(realpathSync.native(changes.root)).toBe(realpathSync.native(dir));
     expect(changes.untracked.sort()).toEqual(["pkg/inner.ts", "top-new.ts"]);
     expect(changes.diff).toContain("a/a.ts");
   });
