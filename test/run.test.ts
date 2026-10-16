@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/run.js";
 
@@ -30,9 +31,12 @@ describe("run", () => {
     expect(r.stopped).toBeUndefined();
   });
 
+  // A child that starts a grandchild sharing its stdout: run() only resolves once both are gone.
+  const WITH_GRANDCHILD = `require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "inherit" }); setTimeout(() => {}, 10000);`;
+
   it("kills the process group on timeout", async () => {
     const started = Date.now();
-    const r = await run("sh", ["-c", "sleep 10 & sleep 10"], { cwd: "/", timeoutMs: 200 });
+    const r = await run(process.execPath, ["-e", WITH_GRANDCHILD], { cwd: tmpdir(), timeoutMs: 200 });
     expect(r.stopped).toBe("timeout");
     expect(Date.now() - started).toBeLessThan(3000);
   });
@@ -41,7 +45,7 @@ describe("run", () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
     const started = Date.now();
-    const r = await run("sh", ["-c", "sleep 10 & sleep 10"], { cwd: "/", timeoutMs: 10_000, signal: controller.signal });
+    const r = await run(process.execPath, ["-e", WITH_GRANDCHILD], { cwd: tmpdir(), timeoutMs: 10_000, signal: controller.signal });
     expect(r.stopped).toBe("aborted");
     expect(Date.now() - started).toBeLessThan(3000);
   });

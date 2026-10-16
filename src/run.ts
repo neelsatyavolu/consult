@@ -14,9 +14,10 @@ const WINDOWS = process.platform === "win32";
  */
 function killTree(pid: number, sig: NodeJS.Signals, sync = false): void {
   if (WINDOWS) {
-    const args = ["/pid", String(pid), "/T", ...(sig === "SIGKILL" ? ["/F"] : [])];
+    // Console programs ignore a polite taskkill, so every stop is forced.
+    const args = ["/pid", String(pid), "/T", "/F"];
     const opts = { stdio: "ignore", windowsHide: true } as const;
-    if (sync) spawnSync("taskkill", [...args, "/F"], opts);
+    if (sync) spawnSync("taskkill", args, opts);
     else spawn("taskkill", args, opts).on("error", () => {});
     return;
   }
