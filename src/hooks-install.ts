@@ -152,6 +152,15 @@ export function applyHookFile(
   return true;
 }
 
+/** Whether this CLI's hook file holds consult's message hook. */
+export function hasConsultHook(agent: HostName, env: NodeJS.ProcessEnv = process.env): boolean {
+  try {
+    return readFileSync(hookFilePath(agent, env), "utf8").includes(MARKER);
+  } catch {
+    return false;
+  }
+}
+
 export interface HookResult {
   readonly agent: HostName;
   readonly ok: boolean;

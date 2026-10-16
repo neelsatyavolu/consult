@@ -1,5 +1,6 @@
 import type { SessionToolDeps } from "../session-tools.js";
 import { loadSettings, settingsPath, type Settings } from "../settings.js";
+import { sessionsSupported, SESSIONS_UNSUPPORTED } from "../platform.js";
 import type { Runner } from "../types.js";
 import { codexIndexPath, describeSession } from "./describe.js";
 import { systemIdentityDeps, type IdentityDeps } from "./identity.js";
@@ -37,6 +38,10 @@ export async function sessionTools(opts: WireOptions): Promise<SessionToolDeps |
     return undefined;
   }
   if (!settings.sessions.enabled) return undefined;
+  if (!sessionsSupported()) {
+    opts.warn(SESSIONS_UNSUPPORTED);
+    return undefined;
+  }
 
   try {
     const dir = registryDir(opts.env);

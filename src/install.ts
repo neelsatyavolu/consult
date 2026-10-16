@@ -1,10 +1,18 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { codexConfigPath, editConfig, isCodexRegistered } from "./codex-config.js";
+import { findWindowsCommand } from "./platform.js";
 import { AGENTS, HOSTS, type HostName, type Runner } from "./types.js";
 
-const SYSTEM_PATH = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+const WINDOWS = process.platform === "win32";
+
+/** Directories the server's PATH always keeps, so git, cmd.exe and taskkill stay reachable. */
+function systemPath(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  if (!WINDOWS) return ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  const root = env.SystemRoot ?? "C:\\Windows";
+  return [join(root, "System32"), root, join(root, "System32", "Wbem")];
+}
 
 export const SERVER_NAME = "consult";
 export const PACKAGE_NAME = "consult-mcp";
@@ -26,8 +34,12 @@ export interface ServerCommand {
   readonly path: string;
 }
 
-/** First executable named `name` on `searchPath`, without resolving symlinks (so version-manager shims keep working). */
+/**
+ * First executable named `name` on `searchPath`, without resolving symlinks (so version-manager shims keep working).
+ * On Windows it tries each PATHEXT extension, as cmd.exe does.
+ */
 export function findOnPath(name: string, searchPath: string): string | undefined {
+  if (WINDOWS) return findWindowsCommand(name, { ...process.env, PATH: searchPath }, existsSync);
   for (const dir of searchPath.split(delimiter).filter(Boolean)) {
     const candidate = join(dir, name);
     try {
@@ -54,12 +66,24 @@ export function serverCommand(script: string, searchPath: string): ServerCommand
   const viaNpx = NPX_CACHE.test(script);
   const npx = viaNpx ? findOnPath("npx", searchPath) : undefined;
   if (viaNpx && !npx) throw new Error("npx not found on PATH");
+  const latest = ["-y", `${PACKAGE_NAME}@latest`, "serve"];
   const launcher = npx
-    ? { command: npx, args: ["-y", `${PACKAGE_NAME}@latest`, "serve"] }
+    ? npxLauncher(npx, node, latest)
     : { command: node, args: [script, "serve"] };
-  const binaries = [launcher.command, node, ...AGENTS.flatMap((agent) => findOnPath(agent, searchPath) ?? [])];
-  const path = [...new Set([...binaries.map((b) => dirname(b)), ...SYSTEM_PATH])].join(delimiter);
+  const binaries = [npx ?? launcher.command, node, ...AGENTS.flatMap((agent) => findOnPath(agent, searchPath) ?? [])];
+  const path = [...new Set([...binaries.map((b) => dirname(b)), ...systemPath()])].join(delimiter);
   return { ...launcher, path };
+}
+
+/**
+ * On Windows npx is a batch file that hosts could only start through cmd.exe, so hosts run npm's npx script with
+ * node instead. Elsewhere they run npx itself.
+ */
+function npxLauncher(npx: string, node: string, args: readonly string[]): { command: string; args: readonly string[] } {
+  if (!WINDOWS) return { command: npx, args };
+  const script = join(dirname(npx), "node_modules", "npm", "bin", "npx-cli.js");
+  if (!existsSync(script)) throw new Error(`could not find npm's npx-cli.js next to ${npx}; install consult globally with \`npm i -g ${PACKAGE_NAME}\` and run \`consult install\``);
+  return { command: node, args: [script, ...args] };
 }
 
 export function codexTomlBlock({ command, args, path }: ServerCommand): string {

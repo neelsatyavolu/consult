@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createConsult } from "../src/consult.js";
+import { maxCommandLine } from "../src/platform.js";
 import type { Adapter, AgentName, RunResult, Runner } from "../src/types.js";
 
 const ok = (stdout = "OUT"): RunResult => ({ stdout, stderr: "", code: 0 });
@@ -54,6 +55,13 @@ describe("consult.ask", () => {
     const result = await setup(run).ask({ agent: "codex", question: "q", cwd: "/tmp" }, undefined, () => {});
     expect(run.mock.calls[0]![2].onStdoutLine).toBeUndefined();
     expect(result.answer).toBe("answer:raw");
+  });
+
+  it("refuses a question too long for one command-line argument, without running anything", async () => {
+    const run = vi.fn<Runner>(async () => ok());
+    const question = "é".repeat(maxCommandLine());
+    await expect(setup(run).ask({ agent: "codex", question, cwd: "/tmp" })).rejects.toThrow(/too long.*point the advisor at files/);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("frames follow-ups without repeating the advisor briefing", async () => {

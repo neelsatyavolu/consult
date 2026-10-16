@@ -1,9 +1,31 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { resolveForSpawn } from "./platform.js";
 import { StringDecoder } from "node:string_decoder";
 import type { RunOptions, RunResult, StopReason } from "./types.js";
 
 const KILL_GRACE_MS = 3000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+const WINDOWS = process.platform === "win32";
+
+/**
+ * Kills the process and everything it started: its process group on macOS and Linux, its process tree (taskkill)
+ * on Windows, which has no process groups and no signals to send them.
+ */
+function killTree(pid: number, sig: NodeJS.Signals, sync = false): void {
+  if (WINDOWS) {
+    const args = ["/pid", String(pid), "/T", ...(sig === "SIGKILL" ? ["/F"] : [])];
+    const opts = { stdio: "ignore", windowsHide: true } as const;
+    if (sync) spawnSync("taskkill", [...args, "/F"], opts);
+    else spawn("taskkill", args, opts).on("error", () => {});
+    return;
+  }
+  try {
+    process.kill(-pid, sig);
+  } catch {
+    // Group already exited.
+  }
+}
 
 // A signal handler that calls process.exit() skips the SIGKILL grace timers, so groups still running then are
 // killed synchronously on the way out.
@@ -13,13 +35,7 @@ function trackGroup(pid: number): void {
   if (!exitHookInstalled) {
     exitHookInstalled = true;
     process.once("exit", () => {
-      for (const group of liveGroups) {
-        try {
-          process.kill(-group, "SIGKILL");
-        } catch {
-          // Group already exited.
-        }
-      }
+      for (const group of liveGroups) killTree(group, "SIGKILL", true);
     });
   }
   liveGroups.add(pid);
@@ -60,7 +76,15 @@ export function run(
   if (signal?.aborted) return Promise.resolve({ stdout: "", stderr: "", code: null, stopped: "aborted" });
 
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    let target;
+    try {
+      target = resolveForSpawn(command, args);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    // detached gives the child its own process group; on Windows it would open a console window instead.
+    const child = spawn(target.command, target.args, { cwd, stdio: ["ignore", "pipe", "pipe"], detached: !WINDOWS, windowsHide: true });
     if (child.pid) trackGroup(child.pid);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -69,11 +93,7 @@ export function run(
     let graceTimer: NodeJS.Timeout | undefined;
 
     const killGroup = (sig: NodeJS.Signals) => {
-      try {
-        if (child.pid) process.kill(-child.pid, sig);
-      } catch {
-        // Group already exited.
-      }
+      if (child.pid) killTree(child.pid, sig);
     };
     const stop = (reason: StopReason) => {
       if (stopped) return;

@@ -31,7 +31,7 @@ export function unwrapShell(command: string): string {
  * A timestamped progress log for the shell: each update as one line, plus a heartbeat whenever nothing has been
  * written for `heartbeatMs`, so a long quiet run still shows it is alive. Call stop() when the run ends.
  */
-export function progressLog(write: (line: string) => void, heartbeat: string, heartbeatMs: number) {
+export function progressLog(write: (line: string) => void, heartbeat: string | (() => string), heartbeatMs: number) {
   const started = Date.now();
   let last = started;
   const update = (text: string) => {
@@ -39,7 +39,7 @@ export function progressLog(write: (line: string) => void, heartbeat: string, he
     write(`[${Math.round((last - started) / 1000)}s] ${text}\n`);
   };
   const timer = setInterval(() => {
-    if (Date.now() - last >= heartbeatMs) update(heartbeat);
+    if (Date.now() - last >= heartbeatMs) update(typeof heartbeat === "string" ? heartbeat : heartbeat());
   }, Math.max(1, Math.round(heartbeatMs / 3)));
   return { update, stop: () => clearInterval(timer) };
 }
