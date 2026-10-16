@@ -37,13 +37,15 @@ export function hookCommand(cmd: ServerCommand): string {
 /**
  * For Claude Code's `asyncRewake`: started in the background when a turn ends, it waits for a message and then
  * exits 2 with the message on stderr, which wakes the idle session. One watcher runs per session, and it stops
- * when the session's process is gone. Grok also reads Claude Code's hook file but runs every handler in the
+ * when the session's process is gone. Headless sessions get none. Grok also reads Claude Code's hook file but runs every handler in the
  * foreground, so the command leaves at once when the event comes from Grok.
  */
 export function watchCommand(cmd: ServerCommand): string {
   const launcher = [cmd.command, ...cmd.args.slice(0, -1), "hook", "--rewake"].map(shellQuote).join(" ");
   return [
-    `i=$(cat); case "$i" in *'"hookEventName"'*) exit 0;; esac;`,
+    // Headless runs (claude -p, the Agent SDK) wait for background hooks before they exit, so the watcher would
+    // keep them alive. They can't be woken anyway.
+    `i=$(cat); case "$CLAUDE_CODE_ENTRYPOINT" in sdk-*) exit 0;; esac; case "$i" in *'"hookEventName"'*) exit 0;; esac;`,
     `s=$(printf '%s' "$i" | sed -n 's/.*"session_id" *: *"\\([A-Za-z0-9-]*\\)".*/\\1/p'); [ -n "$s" ] || exit 0;`,
     'b="${XDG_STATE_HOME:-$HOME/.local/state}/consult"; w="$b/watch-$s.pid";',
     'p=$(cat "$w" 2>/dev/null); [ -n "$p" ] && kill -0 "$p" 2>/dev/null && exit 0;',

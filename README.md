@@ -48,7 +48,7 @@ Check the setup with `npx -y consult-mcp@latest doctor`. It reports each agent C
 
 Each entry sets `PATH` to the directories holding the launcher (`npx` or `node`) and the agent CLIs, because some hosts start MCP servers with a minimal environment.
 
-With [session messages](#session-messages) on, install also adds consult's hooks to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's.
+With [session messages](#session-messages) on, install also adds consult's hooks to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's. The server started through `npx consult-mcp@latest` also rewrites consult's own Claude Code entries when they differ from the current release's, so hook fixes reach you without reinstalling.
 
 To pin to a specific build instead of following `@latest`, install globally with `npm i -g consult-mcp` and run `consult install`, or run `node dist/cli.js install` from a checkout. Hosts then launch that exact script.
 </details>

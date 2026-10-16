@@ -48,8 +48,8 @@ describe("watchCommand", () => {
     writeFileSync(fake, "#!/bin/sh\necho \"woke by $1 $2\" >&2\nexit 2\n");
     chmodSync(fake, 0o755);
     const command = watchCommand({ command: fake, args: ["serve"], path: "/usr/bin:/bin" });
-    const run = (shell: string, input: string) =>
-      spawnSync(shell, ["-c", command], { input, env: { XDG_STATE_HOME: dir, PATH: "/usr/bin:/bin" }, encoding: "utf8", timeout: 20_000 });
+    const run = (shell: string, input: string, env: Record<string, string> = {}) =>
+      spawnSync(shell, ["-c", command], { input, env: { XDG_STATE_HOME: dir, PATH: "/usr/bin:/bin", ...env }, encoding: "utf8", timeout: 20_000 });
     return { dir, run };
   }
 
@@ -61,6 +61,17 @@ describe("watchCommand", () => {
       // A shell may print its own startup noise first.
       expect([shell, res.status, res.stderr.endsWith("woke by hook --rewake\n")]).toEqual([shell, 2, true]);
       expect(existsSync(join(dir, "consult", "watch-s-1.pid"))).toBe(false);
+    }
+  });
+
+  it("leaves at once in headless claude -p and Agent SDK runs, which would otherwise wait for it to exit", () => {
+    for (const shell of shells) {
+      const { run } = setup();
+      for (const entrypoint of ["sdk-cli", "sdk-ts", "sdk-py"]) {
+        const started = Date.now();
+        const res = run(shell, '{"session_id":"s-1","hook_event_name":"Stop"}', { CLAUDE_CODE_ENTRYPOINT: entrypoint });
+        expect([shell, entrypoint, res.status, Date.now() - started < 5_000]).toEqual([shell, entrypoint, 0, true]);
+      }
     }
   });
 

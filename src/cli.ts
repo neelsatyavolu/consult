@@ -14,7 +14,7 @@ import { progressLog } from "./narrate.js";
 import { hookReply, rewakeText } from "./hook.js";
 import { diagnose, formatChecks } from "./doctor.js";
 import { applyHooks, hasConsultHook, type HookResult } from "./hooks-install.js";
-import { findOnPath, install, isRegistered, serverCommand, uninstall } from "./install.js";
+import { findOnPath, install, isRegistered, PACKAGE_NAME, serverCommand, uninstall } from "./install.js";
 import {
   DEFAULT_SETTINGS,
   loadSettings,
@@ -106,6 +106,7 @@ async function serve(): Promise<void> {
     askFork: (target, question, effort, signal) => askSession(target, question, effort, withShutdown(signal)),
     warn: (message) => process.stderr.write(`consult: ${message}\n`),
   });
+  refreshClaudeHooks();
   const tasks = tasksEnabled()
     ? createTaskManager({
         run,
@@ -333,6 +334,23 @@ function setMessageHooks(wanted: readonly HostName[]): readonly HookResult[] {
     ...applyHooks(hosts.filter((agent) => agents.includes(agent)), cmd),
     ...applyHooks(hosts.filter((agent) => !agents.includes(agent)), undefined),
   ].filter((r) => r.changed || !r.ok);
+}
+
+/**
+ * Hook commands are written into the hosts' settings at install time, so a fix to one would only reach users who
+ * reinstall. Each server start rewrites consult's own Claude Code entries where they already are; Codex's are
+ * left alone because changing them makes Codex ask the user to trust them again.
+ */
+function refreshClaudeHooks(): void {
+  try {
+    if (!sessionsSupported() || !messagesOn(loadSettings(settingsPath())) || !hasConsultHook("claude")) return;
+    const cmd = serverCommand(scriptPath(), searchPath());
+    // Only a server started through `npx consult-mcp@latest`, as install sets up; a checkout or a pinned global
+    // install must not repoint the user's hooks at itself.
+    if (cmd.args.includes(`${PACKAGE_NAME}@latest`)) applyHooks(["claude"], cmd);
+  } catch {
+    // Reinstalling fixes it; the server works either way.
+  }
 }
 
 /** Never fails and never prints anything but a hook reply: the host runs this on every tool call. */
