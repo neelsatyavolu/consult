@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maxCommandLine, resolveForSpawn, shimTarget } from "../src/platform.js";
+import { commandLineSize, maxCommandLine, resolveForSpawn, shimTarget, windowsArgLength } from "../src/platform.js";
 
 // The shim npm's cmd-shim writes for a node script, e.g. %APPDATA%\npm\codex.cmd.
 const NPM_NODE_SHIM = `@ECHO off\r
@@ -57,15 +57,25 @@ const files = (map: Record<string, string>) => ({
 
 describe("shimTarget", () => {
   it("finds the node script behind an npm shim", () => {
-    expect(shimTarget(NPM_NODE_SHIM, "C:\\npm")).toEqual({ path: "C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js", node: true });
+    expect(shimTarget(NPM_NODE_SHIM, "C:\\npm")).toEqual({ path: "C:\\npm\\node_modules\\@openai\\codex\\bin\\codex.js", node: true, flags: [] });
   });
 
   it("finds the binary behind an npm shim for a native executable", () => {
-    expect(shimTarget(NPM_EXE_SHIM, "C:\\npm")).toEqual({ path: "C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe", node: false });
+    expect(shimTarget(NPM_EXE_SHIM, "C:\\npm")).toEqual({ path: "C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe", node: false, flags: [] });
   });
 
   it("finds the script behind a pnpm shim", () => {
-    expect(shimTarget(PNPM_SHIM, "C:\\pnpm")).toEqual({ path: "C:\\pnpm\\global\\5\\node_modules\\grok-cli\\dist\\index.js", node: true });
+    expect(shimTarget(PNPM_SHIM, "C:\\pnpm")).toEqual({ path: "C:\\pnpm\\global\\5\\node_modules\\grok-cli\\dist\\index.js", node: true, flags: [] });
+  });
+
+  it("keeps node flags from the script's shebang", () => {
+    const shim = NPM_NODE_SHIM.replace('"%_prog%"  "%dp0%', '"%_prog%" --no-warnings  "%dp0%');
+    expect(shimTarget(shim, "C:\\npm")?.flags).toEqual(["--no-warnings"]);
+  });
+
+  it("refuses a shim that runs its script with something other than node", () => {
+    const sh = NPM_NODE_SHIM.replaceAll("node.exe", "sh.exe").replace('SET "_prog=node"', 'SET "_prog=sh"').replace("codex.js", "codex.sh");
+    expect(shimTarget(sh, "C:\\npm")).toBeUndefined();
   });
 
   it("gives up on a batch file it does not recognise", () => {
@@ -114,16 +124,31 @@ describe("resolveForSpawn", () => {
     expect(() => resolveForSpawn("agy", [], { platform: "win32", env, node: "C:\\node.exe", ...fs })).toThrow(/without cmd\.exe/);
   });
 
-  it("leaves an unknown command for spawn to report as missing", () => {
-    expect(resolveForSpawn("nope", ["a"], { platform: "win32", env, node: "C:\\node.exe", ...files({}) })).toEqual({ command: "nope", args: ["a"] });
+  it("reports an unknown command as missing instead of letting Windows search the current directory", () => {
+    expect(() => resolveForSpawn("nope", ["a"], { platform: "win32", env, node: "C:\\node.exe", ...files({}) })).toThrow(/nope CLI not found on PATH/);
   });
 });
 
-describe("maxCommandLine", () => {
-  it("is tighter on Windows, whose whole command line is capped at 32K characters", () => {
+describe("command-line limits", () => {
+  it("stays under each platform's limit", () => {
     expect(maxCommandLine("win32")).toBeLessThan(32_767);
     expect(maxCommandLine("linux")).toBeLessThan(131_072);
-    expect(maxCommandLine("win32")).toBeLessThan(maxCommandLine("linux"));
+    expect(maxCommandLine("darwin")).toBeLessThan(1_048_576);
+  });
+
+  it("counts Windows arguments the way libuv quotes them", () => {
+    expect(windowsArgLength("plain")).toBe(5);
+    expect(windowsArgLength("")).toBe(2);
+    expect(windowsArgLength("a b")).toBe(5);
+    expect(windowsArgLength('say "hi"')).toBe(12);
+    expect(windowsArgLength('a\\"b')).toBe(8);
+    expect(windowsArgLength("a b\\")).toBe(7);
+    expect(windowsArgLength('"'.repeat(1000))).toBe(2002);
+  });
+
+  it("measures the whole Windows command line, but only the longest argument elsewhere", () => {
+    expect(commandLineSize("node", ["a b", "cc"], "win32")).toBe(5 + 6 + 3);
+    expect(commandLineSize("node", ["é", "cc"], "linux")).toBe(2);
   });
 });
 

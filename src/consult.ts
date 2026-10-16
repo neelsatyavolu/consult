@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { describeLine } from "./narrate.js";
-import { commandLineSize, maxCommandLine } from "./platform.js";
+import { commandLineSize, maxCommandLine, resolveForSpawn } from "./platform.js";
 import { frameForkPrompt, framePrompt } from "./prompt.js";
 import {
   AdvisorError,
@@ -25,7 +25,14 @@ export interface ConsultDeps {
 const STDERR_TAIL = 2000;
 /** The question reaches each CLI as one argument, so it must fit the platform's command-line limit. */
 function assertFitsCommandLine(agent: AgentName, invocation: Invocation): void {
-  const size = commandLineSize(invocation.command, invocation.args);
+  // Measured as it will be spawned: on Windows a .cmd shim becomes node plus the script path.
+  let spawned: { readonly command: string; readonly args: readonly string[] } = invocation;
+  try {
+    spawned = resolveForSpawn(invocation.command, invocation.args);
+  } catch {
+    // run() reports the missing CLI.
+  }
+  const size = commandLineSize(spawned.command, spawned.args);
   const max = maxCommandLine();
   if (size > max) {
     throw new AdvisorError(

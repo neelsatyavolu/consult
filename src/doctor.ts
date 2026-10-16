@@ -86,10 +86,12 @@ export async function diagnose(deps: DoctorDeps): Promise<readonly Check[]> {
     return [nodeCheck(deps.nodeVersion), ...agentChecks, { status: "fail", label: "no agent CLI installed", fix: "install and sign in to claude, codex, grok or agy" }];
   }
   const hosts = installed.filter(isHost);
-  const registrations = await Promise.all(
-    hosts.map(async (agent): Promise<Check> =>
-      (await deps.isRegistered(agent)) ? { status: "ok", label: `${agent} registered` } : { status: "fail", label: `${agent} not registered`, fix: INSTALL_FIX },
-    ),
+  // `consult settings` can leave a host out on purpose, so only a setup with no host at all is a failure.
+  const registered = (await Promise.all(hosts.map(async (agent) => ((await deps.isRegistered(agent)) ? [agent] : [])))).flat();
+  const registrations = hosts.map((agent): Check =>
+    registered.includes(agent)
+      ? { status: "ok", label: `${agent} registered` }
+      : { status: registered.length === 0 ? "fail" : "warn", label: `${agent} not registered`, fix: INSTALL_FIX },
   );
   let agyOk = true;
   const agy: Check[] = [];
@@ -104,7 +106,7 @@ export async function diagnose(deps: DoctorDeps): Promise<readonly Check[]> {
   }
   const { ping } = deps;
   const pings = ping ? await Promise.all(installed.filter((a) => a !== "agy" || agyOk).map((a) => pingCheck(ping, a))) : [];
-  return [nodeCheck(deps.nodeVersion), ...agentChecks, ...registrations, ...settingsChecks(deps, hosts), ...agy, ...pings];
+  return [nodeCheck(deps.nodeVersion), ...agentChecks, ...registrations, ...settingsChecks(deps, registered), ...agy, ...pings];
 }
 
 const MARKS: Record<CheckStatus, string> = { ok: "✓", warn: "!", fail: "✗" };

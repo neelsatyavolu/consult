@@ -196,6 +196,10 @@ function parseAgents(list: string | undefined): readonly AgentName[] {
   return agents as AgentName[];
 }
 
+/** `value` quoted so a pasted command takes it literally: single quotes for POSIX shells, double on Windows. */
+const shellLiteral = (value: string) =>
+  process.platform === "win32" ? `"${value.replaceAll('"', '""')}"` : `'${value.replaceAll("'", "'\\''")}'`;
+
 /** Aborts on Ctrl-C or SIGTERM, so advisors in their own process groups stop with the command. */
 function interruptSignal(): AbortSignal {
   const controller = new AbortController();
@@ -244,7 +248,7 @@ async function reviewCommand(argv: readonly string[]): Promise<void> {
   }
   const sections = entries.map((e) =>
     "result" in e && e.result
-      ? `## ${e.agent}${e.result.model ? ` (${e.result.model})` : ""}\n\n${e.result.answer}\n\n[session ${e.result.sessionId}: consult ask ${e.agent} --resume ${e.result.sessionId} --cwd ${JSON.stringify(changes.root)} "..."]`
+      ? `## ${e.agent}${e.result.model ? ` (${e.result.model})` : ""}\n\n${e.result.answer}\n\n[session ${e.result.sessionId}: consult ask ${e.agent} --resume ${e.result.sessionId} --cwd ${shellLiteral(changes.root)} "..."]`
       : `## ${e.agent}\n\nFailed: ${"error" in e ? e.error : "unknown error"}`,
   );
   process.stdout.write(`${sections.join("\n\n")}\n`);

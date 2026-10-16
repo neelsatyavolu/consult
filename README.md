@@ -96,7 +96,7 @@ consult collects the diff itself and sends it to each advisor with review instru
 - With `base` (e.g. `main`), it reviews the branch since it left `base`, including uncommitted work (`git diff --merge-base main`).
 - `focus` adds what to look at especially, e.g. `"error handling in the retry path"`.
 
-It always reviews the whole repository, even from a subdirectory, and advisors run at the repository root. The question reaches each CLI as one command-line argument, so the diff is cut to fit: at up to about 110 KB on macOS and Linux and 20 KB on Windows, whose command lines are shorter. The advisors are told to read the changed files for the rest. External diff, textconv and fsmonitor commands are off, so collecting the diff runs nothing but git.
+It always reviews the whole repository, even from a subdirectory, and advisors run at the repository root. The question reaches each CLI as one command-line argument, so the diff is cut to fit: up to about 110 KB on Linux, 190 KB on macOS and 25 KB on Windows, whose command lines are shortest. The advisors are told to read the changed files for the rest. External diff, textconv, fsmonitor and clean/process filter commands are off, so collecting the diff runs nothing but git.
 
 From the shell, `consult review` uses every advisor CLI on your `PATH` unless you pass `--agents codex,grok`:
 

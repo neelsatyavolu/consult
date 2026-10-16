@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { collectChanges, MAX_DIFF_BYTES, reviewQuestion } from "../src/review.js";
+import { existsSync } from "node:fs";
+import { collectChanges, filterNames, MAX_DIFF_BYTES, reviewQuestion } from "../src/review.js";
 import { maxCommandLine } from "../src/platform.js";
 import { run } from "../src/run.js";
 import { AdvisorError } from "../src/types.js";
@@ -44,6 +45,18 @@ describe("collectChanges", () => {
     expect(realpathSync.native(changes.root)).toBe(realpathSync.native(dir));
     expect(changes.untracked.sort()).toEqual(["pkg/inner.ts", "top-new.ts"]);
     expect(changes.diff).toContain("a/a.ts");
+  });
+
+  it("never runs the repository's clean or process filters", async () => {
+    const dir = repo();
+    const marker = join(dir, "..", `${dir.split(/[\\/]/).pop()}-filter-ran`);
+    writeFileSync(join(dir, ".gitattributes"), "*.ts filter=mark\n");
+    git(dir, "config", "filter.mark.clean", `node -e "require('fs').writeFileSync(process.argv[1], 'x')" ${JSON.stringify(marker)}`);
+    git(dir, "config", "filter.mark.required", "true");
+    writeFileSync(join(dir, "a.ts"), "export const a = 9;\n");
+    const changes = await collectChanges(run, dir);
+    expect(changes.diff).toContain("+export const a = 9;");
+    expect(existsSync(marker)).toBe(false);
   });
 
   it("reports a missing directory and a cancelled review as such", async () => {
@@ -91,6 +104,12 @@ describe("collectChanges", () => {
     expect(changes.truncated).toBe(true);
     expect(Buffer.byteLength(changes.diff)).toBeLessThanOrEqual(MAX_DIFF_BYTES);
     expect(changes.diff.endsWith("y")).toBe(true);
+  });
+});
+
+describe("filterNames", () => {
+  it("takes each driver name once, including names with dots", () => {
+    expect(filterNames("filter.lfs.clean\nfilter.lfs.process\nfilter.my.tool.smudge\n")).toEqual(["lfs", "my.tool"]);
   });
 });
 

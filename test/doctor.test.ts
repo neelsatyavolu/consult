@@ -38,9 +38,19 @@ describe("diagnose", () => {
     expect(node).toMatchObject({ status: "fail", fix: expect.stringMatching(/Node 22/) });
   });
 
-  it("fails when a host CLI is installed but consult is not registered with it", async () => {
-    const checks = await diagnose(deps({ isRegistered: async (agent) => agent !== "codex" }));
-    expect(failures(checks)).toEqual([expect.objectContaining({ label: "codex not registered", fix: expect.stringMatching(/consult-mcp@latest install/) })]);
+  it("warns about a host left unregistered, and fails only when no host is registered", async () => {
+    const one = await diagnose(deps({ isRegistered: async (agent) => agent !== "codex" }));
+    expect(failures(one)).toEqual([]);
+    expect(one.find((c) => c.label === "codex not registered")).toMatchObject({ status: "warn", fix: expect.stringMatching(/consult-mcp@latest install/) });
+    const none = await diagnose(deps({ isRegistered: async () => false }));
+    expect(failures(none).map((c) => c.label)).toEqual(["claude not registered", "codex not registered", "grok not registered"]);
+  });
+
+  it("checks message hooks only for registered hosts", async () => {
+    const on = withMessagesEnabled(withSessionsMode(DEFAULT_SETTINGS, "repo"), true);
+    const hasMessageHook = vi.fn(() => true);
+    await diagnose(deps({ loadSettings: () => on, hasMessageHook, isRegistered: async (agent) => agent !== "grok" }));
+    expect(hasMessageHook.mock.calls.map((c) => c[0])).toEqual(["claude", "codex"]);
   });
 
   it("skips hosts that are not installed and fails only when no advisor is", async () => {
