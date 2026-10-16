@@ -13,7 +13,7 @@ npx -y consult-mcp@latest review --base main
 
 With [live sessions](#live-sessions) on, agents can also ask the sessions you already have running and message them, and with [task dispatch](#task-dispatch) on, hand a coding task to a Codex or Grok worker and follow its progress.
 
-[consult.n3el.dev](https://consult.n3el.dev) · [npm](https://www.npmjs.com/package/consult-mcp)
+[getconsult.dev](https://getconsult.dev) · [npm](https://www.npmjs.com/package/consult-mcp)
 
 ## Install
 
@@ -239,7 +239,7 @@ node dist/cli.js install              # register this checkout with your agents
 
 Releases: bump `version` in `package.json`, then push a matching tag (`git tag v0.3.0 && git push --tags`). The [release workflow](.github/workflows/release.yml) publishes to npm with provenance through npm trusted publishing, then creates the GitHub release. Everyone using `@latest` picks it up on their next agent session. Tags with a pre-release suffix (`v0.3.0-rc.1`) publish to the `next` dist-tag instead of `latest`.
 
-The landing page is in [`site/`](site) and deploys to [consult.n3el.dev](https://consult.n3el.dev) on Vercel.
+The landing page is in [`site/`](site) and deploys to [getconsult.dev](https://getconsult.dev) on Vercel. The old address, consult.n3el.dev, redirects there.
 
 ## License
 

@@ -1,4 +1,4 @@
-/* consult.n3el.dev */
+/* getconsult.dev */
 
 :root {
   color-scheme: dark light;
@@ -792,8 +792,17 @@ h3 {
     font-size: 16px;
   }
 
-  .nav-links a:not(.nav-gh) {
-    display: none;
+  /* The section links wrap onto their own row under the brand instead of disappearing. */
+  .nav {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+
+  .nav-links {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    row-gap: 8px;
   }
 
   .turn {
@@ -832,8 +841,11 @@ h3 {
     gap: 10px;
   }
 
+  /* Wrap long commands: the scrollbar is hidden, so scrolling would clip them with no hint. */
   .command code {
     flex-basis: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .command .copy {
