@@ -23,6 +23,8 @@ export interface DoctorDeps {
   readonly agyContainment: () => Promise<void>;
   /** With it, each installed advisor is sent one tiny question, which shows whether its CLI is signed in. */
   readonly ping?: (agent: AgentName) => Promise<AskResult>;
+  /** False on Windows, where live sessions and messages stay off. */
+  readonly sessionsSupported?: boolean;
 }
 
 const MIN_NODE_MAJOR = 22;
@@ -50,6 +52,11 @@ function settingsChecks(deps: DoctorDeps, hosts: readonly HostName[]): readonly 
     `task dispatch ${settings.tasks.enabled ? "on" : "off"}`,
   ];
   const summary: Check = { status: "ok", label: "settings", detail: features.join(", ") };
+  if (deps.sessionsSupported === false) {
+    return settings.sessions.enabled
+      ? [summary, { status: "warn", label: "live sessions and messages are off on this platform", fix: "they need macOS or Linux" }]
+      : [summary];
+  }
   if (!messagesOn(settings)) return [summary];
   const hooks = hosts.map((agent): Check =>
     deps.hasMessageHook(agent)

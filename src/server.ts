@@ -212,14 +212,16 @@ export function createServer({
         annotations: ADVISOR_HINTS,
       },
       async (args, extra) => {
-        const cwd = args.cwd ?? defaultCwd;
-        let question: string;
+        let changes: Changes;
         try {
-          question = reviewQuestion(await collectChanges(cwd, args.base, extra.signal), args.focus);
+          changes = await collectChanges(args.cwd ?? defaultCwd, args.base, extra.signal);
         } catch (err) {
           return { isError: true, content: [{ type: "text", text: errorMessage(err) }] };
         }
-        return askPanel(args.agents, (agent) => ask({ agent, question, cwd, effort: args.effort }, extra.signal), extra, progressIntervalMs);
+        const question = reviewQuestion(changes, args.focus);
+        // Advisors run at the repository root, which the diff's paths are relative to.
+        const call = (agent: AgentName) => ask({ agent, question, cwd: changes.root, effort: args.effort }, extra.signal);
+        return askPanel(args.agents, call, extra, progressIntervalMs);
       },
     );
   }
