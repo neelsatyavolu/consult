@@ -426,6 +426,16 @@ h1 {
   margin-top: 36px;
 }
 
+.turn-grok .speaker {
+  color: var(--grok);
+}
+
+.turn-grok .body {
+  border-left: 2px solid var(--grok);
+  padding-left: 16px;
+  margin-left: -2px;
+}
+
 .turn-codex-ask .speaker {
   color: var(--codex);
 }
@@ -793,6 +803,7 @@ h3 {
   }
 
   .turn-codex .body,
+  .turn-grok .body,
   .turn-claude-reply .body {
     margin-left: 0;
     padding-left: 14px;
