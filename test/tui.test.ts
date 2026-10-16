@@ -1,6 +1,18 @@
+import { log, multiselect } from "@clack/prompts";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, messagesOn, withSessionsMode, withTasksEnabled } from "../src/settings.js";
-import { chooseInstallMode, parseMessagesFlag, parseSessionsFlag, planSettings } from "../src/tui.js";
+import { chooseInstallMode, parseMessagesFlag, parseSessionsFlag, planSettings, runSettings } from "../src/tui.js";
+
+vi.mock("@clack/prompts", () => ({
+  intro: vi.fn(),
+  outro: vi.fn(),
+  cancel: vi.fn(),
+  log: { warn: vi.fn(), info: vi.fn(), success: vi.fn(), error: vi.fn() },
+  isCancel: () => false,
+  select: vi.fn(async () => "repo"),
+  confirm: vi.fn(async () => false),
+  multiselect: vi.fn(async () => ["claude"]),
+}));
 
 describe("parseSessionsFlag", () => {
   it("accepts off, repo and machine, and is undefined when absent", () => {
@@ -54,6 +66,27 @@ describe("planSettings", () => {
       register: [],
       unregister: [],
     });
+  });
+});
+
+describe("runSettings", () => {
+  it("continues when one CLI's registration check throws", async () => {
+    const save = vi.fn();
+    await runSettings({
+      load: () => DEFAULT_SETTINGS,
+      save,
+      installed: ["claude", "codex"],
+      isRegistered: async (agent) => {
+        if (agent === "codex") throw new Error("could not parse config");
+        return true;
+      },
+      register: async () => [],
+      unregister: async () => [],
+      setMessageHooks: () => [],
+    });
+    expect(log.warn).toHaveBeenCalledWith(expect.stringMatching(/codex: could not parse config/));
+    expect(multiselect).toHaveBeenCalledWith(expect.objectContaining({ initialValues: ["claude"] }));
+    expect(save).toHaveBeenCalled();
   });
 });
 
