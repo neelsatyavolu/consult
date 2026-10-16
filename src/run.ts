@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { resolveForSpawn } from "./platform.js";
 import { StringDecoder } from "node:string_decoder";
 import type { RunOptions, RunResult, StopReason } from "./types.js";
@@ -7,6 +8,8 @@ const KILL_GRACE_MS = 3000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 const WINDOWS = process.platform === "win32";
+/** By full path: Windows looks for a bare name in the current directory first, which may be an untrusted repository. */
+const TASKKILL = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe");
 
 /**
  * Kills the process and everything it started: its process group on macOS and Linux, its process tree (taskkill)
@@ -17,8 +20,8 @@ function killTree(pid: number, sig: NodeJS.Signals, sync = false): void {
     // Console programs ignore a polite taskkill, so every stop is forced.
     const args = ["/pid", String(pid), "/T", "/F"];
     const opts = { stdio: "ignore", windowsHide: true } as const;
-    if (sync) spawnSync("taskkill", args, opts);
-    else spawn("taskkill", args, opts).on("error", () => {});
+    if (sync) spawnSync(TASKKILL, args, opts);
+    else spawn(TASKKILL, args, opts).on("error", () => {});
     return;
   }
   try {
@@ -132,8 +135,9 @@ export function run(
     });
     child.on("close", (code) => {
       cleanup();
-      // Leftover grandchildren keep the group alive; take them down now instead of after the grace period.
-      if (stopped) killGroup("SIGKILL");
+      // Leftover grandchildren keep the group alive; take them down now instead of after the grace period. On
+      // Windows the forced tree kill already took them, and the pid may since belong to another process.
+      if (stopped && !WINDOWS) killGroup("SIGKILL");
       resolve({
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),

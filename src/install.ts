@@ -7,11 +7,12 @@ import { AGENTS, HOSTS, type HostName, type Runner } from "./types.js";
 
 const WINDOWS = process.platform === "win32";
 
-/** Directories the server's PATH always keeps, so git, cmd.exe and taskkill stay reachable. */
+/** System directories the server's PATH always keeps. */
 function systemPath(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   if (!WINDOWS) return ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
   const root = env.SystemRoot ?? "C:\\Windows";
-  return [join(root, "System32"), root, join(root, "System32", "Wbem")];
+  // PowerShell too: Codex on Windows runs its read-only commands through it.
+  return [join(root, "System32"), root, join(root, "System32", "Wbem"), join(root, "System32", "WindowsPowerShell", "v1.0")];
 }
 
 export const SERVER_NAME = "consult";
@@ -70,7 +71,9 @@ export function serverCommand(script: string, searchPath: string): ServerCommand
   const launcher = npx
     ? npxLauncher(npx, node, latest)
     : { command: node, args: [script, "serve"] };
-  const binaries = [npx ?? launcher.command, node, ...AGENTS.flatMap((agent) => findOnPath(agent, searchPath) ?? [])];
+  // git for review_changes: on Windows it usually lives outside the system directories.
+  const tools = [...AGENTS, "git"].flatMap((name) => findOnPath(name, searchPath) ?? []);
+  const binaries = [npx ?? launcher.command, node, ...tools];
   const path = [...new Set([...binaries.map((b) => dirname(b)), ...systemPath()])].join(delimiter);
   return { ...launcher, path };
 }
@@ -80,7 +83,8 @@ export function serverCommand(script: string, searchPath: string): ServerCommand
  * node instead. Elsewhere they run npx itself.
  */
 function npxLauncher(npx: string, node: string, args: readonly string[]): { command: string; args: readonly string[] } {
-  if (!WINDOWS) return { command: npx, args };
+  // Some version managers ship npx as an .exe, which hosts can start directly.
+  if (!WINDOWS || !/\.(cmd|bat)$/i.test(npx)) return { command: npx, args };
   const script = join(dirname(npx), "node_modules", "npm", "bin", "npx-cli.js");
   if (!existsSync(script)) throw new Error(`could not find npm's npx-cli.js next to ${npx}; install consult globally with \`npm i -g ${PACKAGE_NAME}\` and run \`consult install\``);
   return { command: node, args: [script, ...args] };

@@ -1,9 +1,9 @@
 import { assertDirectory } from "./consult.js";
-import { maxCommandLine } from "./platform.js";
+import { argSize, maxCommandLine } from "./platform.js";
 import { AdvisorError, type Runner, type RunResult } from "./types.js";
 
 /** Diff bytes collected at most; reviewQuestion cuts further so the whole question fits one command line. */
-export const MAX_DIFF_BYTES = maxCommandLine();
+export const MAX_DIFF_BYTES = Math.min(maxCommandLine(), 200_000);
 /** Room left in the command line for the advisor briefing, CLI flags and agy's tool note. */
 const PROMPT_RESERVE = 6_000;
 const MAX_UNTRACKED = 50;
@@ -31,8 +31,8 @@ const STOPPED: Record<NonNullable<RunResult["stopped"]>, string> = {
 
 /**
  * The changes to review in the repository holding `cwd`: everything not yet committed (staged, unstaged and
- * untracked files), or with `base`, everything since the current branch left it. External diff, textconv and
- * fsmonitor commands are off, so collecting the diff runs nothing but git itself.
+ * untracked files), or with `base`, everything since the current branch left it. External diff, textconv,
+ * fsmonitor and clean/process filter commands are off, so collecting the diff runs nothing but git itself.
  */
 export async function collectChanges(run: Runner, cwd: string, base?: string, signal?: AbortSignal): Promise<Changes> {
   if (base !== undefined && !BASE_PATTERN.test(base)) throw new AdvisorError(`base must be a branch, tag or commit name, got ${JSON.stringify(base)}`);
@@ -52,8 +52,13 @@ export async function collectChanges(run: Runner, cwd: string, base?: string, si
   const top = await git(cwd, ["rev-parse", "--show-toplevel"]);
   if (top.code !== 0) throw new AdvisorError(`${cwd} is not inside a git repository`);
   const root = top.stdout.trim();
+  // Clean and process filters from the repository's config would run on every changed file; switch each off.
+  const filterConfig = await git(root, ["config", "--name-only", "--get-regexp", "^filter\\."]);
+  const noFilters = filterNames(filterConfig.stdout).flatMap((name) =>
+    ["clean", "smudge", "process"].flatMap((key) => ["-c", `filter.${name}.${key}=`]).concat(["-c", `filter.${name}.required=false`]),
+  );
   // Every diff runs from the top level, so the diff and the untracked list share one path base.
-  const inRoot = (args: readonly string[], max?: number) => git(root, args, max);
+  const inRoot = (args: readonly string[], max?: number) => git(root, [...noFilters, ...args], max);
 
   let ranges: readonly (readonly string[])[];
   if (base !== undefined) {
@@ -92,6 +97,15 @@ export async function collectChanges(run: Runner, cwd: string, base?: string, si
   };
 }
 
+/** Filter driver names in `git config --name-only` output, e.g. "lfs" from filter.lfs.clean. */
+export function filterNames(configNames: string): readonly string[] {
+  const names = configNames
+    .split("\n")
+    .map((key) => /^filter\.(.+)\.[^.]+$/i.exec(key.trim())?.[1])
+    .filter((name): name is string => Boolean(name));
+  return [...new Set(names)];
+}
+
 function cutAtLine(text: string): string {
   const end = text.lastIndexOf("\n");
   return end > 0 ? text.slice(0, end) : text;
@@ -125,8 +139,14 @@ export function reviewQuestion(changes: Changes, focus?: string): string {
   const head = [`Review ${scope}.`, INSTRUCTIONS, ...(focus?.trim() ? [`Focus especially on: ${focus.trim()}`] : [])].join("\n\n");
   const files = `Changed files (paths are relative to the repository root):\n${changes.stat || "(none tracked)"}${untracked}`;
   const note = (kb: number) => `\n\nThe diff below is cut at about ${kb} KB; read the changed files for the rest.`;
-  const fixed = Buffer.byteLength(`${head}\n\n${files}${note(999)}\n\n`) + 2 * fenceFor(changes.diff).length + 16;
-  const cut = cutToBytes(changes.diff, maxCommandLine() - PROMPT_RESERVE - fixed);
+  const fixed = argSize(`${head}\n\n${files}${note(999)}\n\n`) + 2 * fenceFor(changes.diff).length + 16;
+  const budget = maxCommandLine() - PROMPT_RESERVE - fixed;
+  // On Windows quotes take two characters once escaped, so cut until the escaped diff fits.
+  let cut = cutToBytes(changes.diff, budget);
+  for (let limit = budget; argSize(cut.text) > budget && limit > 0; ) {
+    limit -= argSize(cut.text) - budget + 256;
+    cut = { text: cutToBytes(changes.diff, limit).text, truncated: true };
+  }
   const truncated = changes.truncated || cut.truncated;
   const fence = fenceFor(cut.text);
   return `${head}\n\n${files}${truncated ? note(Math.round(Buffer.byteLength(cut.text) / 1000)) : ""}\n\n${fence}diff\n${cut.text}\n${fence}`;

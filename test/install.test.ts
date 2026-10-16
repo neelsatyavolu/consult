@@ -1,3 +1,5 @@
+import { existsSync as existsSyncForWindows } from "node:fs";
+import { findWindowsCommand } from "../src/platform.js";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -260,6 +262,8 @@ describe.runIf(WINDOWS)("on Windows", () => {
     expect(cmd.args[0]!.toLowerCase()).toMatch(/npx-cli\.js$/);
     expect(cmd.args.slice(1)).toEqual(["-y", "consult-mcp@latest", "serve"]);
     expect(cmd.path.toLowerCase()).toContain("system32");
+    // review_changes runs git from the server, whose PATH is only this.
+    expect(findWindowsCommand("git", { PATH: cmd.path }, existsSyncForWindows)).toBeDefined();
   });
 
   it("pins a local checkout to node and the script", () => {
