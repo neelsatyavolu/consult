@@ -111,12 +111,14 @@ export async function diagnose(deps: DoctorDeps): Promise<readonly Check[]> {
 
 const MARKS: Record<CheckStatus, string> = { ok: "✓", warn: "!", fail: "✗" };
 
-export function formatChecks(checks: readonly Check[]): string {
+/** One line per check with its fix. `home` is shown as ~, so the output can be pasted into a public bug report. */
+export function formatChecks(checks: readonly Check[], home?: string): string {
   const lines = checks.flatMap((c) => [
     `${MARKS[c.status]} ${c.label}${c.detail ? `: ${c.detail}` : ""}`,
     ...(c.fix && c.status !== "ok" ? [`  → ${c.fix}`] : []),
   ]);
   const problems = checks.filter((c) => c.status === "fail").length;
   const summary = problems === 0 ? "No problems found." : `${problems} problem${problems === 1 ? "" : "s"} found.`;
-  return `${lines.join("\n")}\n\n${summary}`;
+  const text = `${lines.join("\n")}\n\n${summary}`;
+  return home ? text.replaceAll(home, "~") : text;
 }

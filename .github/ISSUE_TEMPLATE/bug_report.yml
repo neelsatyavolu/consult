@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in consult doesn't work the way the docs say it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Two minutes here saves a lot of back and forth.
+
+        **Security problem?** Don't file it here. Use [private vulnerability reporting](https://github.com/neelsatyavolu/consult/security/advisories/new) instead.
+
+        Issues are public: leave out secrets, tokens and private code.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        I asked codex for a review with `consult review --base main`. I expected findings, but it failed with "…".
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: The command or tool call, and anything about your setup that matters.
+      placeholder: |
+        1. npx -y consult-mcp@latest install
+        2. In Claude Code, ask: "Get a second opinion from Codex on src/sync.ts"
+        3. …
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      options:
+        - An agent calling a consult tool (ask_agent, review_changes, …)
+        - The consult CLI (consult ask, review, doctor, …)
+        - Install, uninstall or settings
+        - Live sessions or session messages
+        - Task dispatch
+        - The website
+        - Somewhere else
+    validations:
+      required: true
+  - type: checkboxes
+    id: agents
+    attributes:
+      label: Which agent CLIs were involved?
+      options:
+        - label: Claude Code (claude)
+        - label: Codex (codex)
+        - label: Grok (grok)
+        - label: Antigravity (agy)
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of consult doctor
+      description: |
+        Run `npx -y consult-mcp@latest doctor` and paste everything it prints. It shows the consult version, your platform, each agent CLI's version and what's misconfigured. Your home directory is shown as `~`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message or log
+      description: The exact error text, if there was one. For `consult` commands, the stderr progress lines help too.
+      render: text

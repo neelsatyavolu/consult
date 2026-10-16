@@ -121,4 +121,10 @@ describe("formatChecks", () => {
     expect(out).toContain("→ run `consult install`");
     expect(out).toMatch(/1 problem/);
   });
+
+  it("shortens the home directory to ~, so the output can be pasted into a public bug report", () => {
+    const out = formatChecks([{ status: "warn", label: "agy is not read-only", detail: "remove /Users/sam/.gemini/config/hooks.json" }], "/Users/sam");
+    expect(out).toContain("remove ~/.gemini/config/hooks.json");
+    expect(out).not.toContain("/Users/sam");
+  });
 });

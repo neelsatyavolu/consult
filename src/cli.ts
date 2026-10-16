@@ -271,7 +271,8 @@ async function doctorCommand(argv: readonly string[]): Promise<void> {
     },
     ...(values.ask ? { ping: (agent: AgentName) => ask({ agent, question: "Reply with the single word OK.", cwd: homedir(), effort: "low" }) } : {}),
   });
-  process.stdout.write(`consult ${VERSION}\n\n${formatChecks(checks)}\n`);
+  const platform = `${process.platform} ${process.arch}, node ${process.version}`;
+  process.stdout.write(`consult ${VERSION} (${platform})\n\n${formatChecks(checks, homedir())}\n`);
   if (checks.some((c) => c.status === "fail")) process.exitCode = 1;
 }
 

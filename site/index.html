@@ -438,10 +438,32 @@
 <span class="prompt">$</span> consult doctor --ask
 <span class="prompt">$</span> consult settings</code></pre>
     </section>
+
+    <section id="bugs" class="section wrap" aria-labelledby="bugs-title">
+      <div class="section-head">
+        <h2 id="bugs-title">Found a bug?</h2>
+        <p>Tell us in two steps. It takes about two minutes, and you only need a GitHub account.</p>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <p>Run doctor and copy what it prints. It shows your consult version, platform and agent CLIs, and what’s misconfigured. Your home directory appears as <code>~</code>.</p>
+          <div class="command" data-copy-wrap>
+            <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest doctor</code>
+            <button class="copy" type="button" data-copy="npx -y consult-mcp@latest doctor" hidden>Copy</button>
+          </div>
+        </li>
+        <li>
+          <p>Open the bug report form, which asks what happened, how to reproduce it and for the doctor output:</p>
+          <p><a class="report" href="https://github.com/neelsatyavolu/consult/issues/new?template=bug_report.yml">Open a bug report</a></p>
+        </li>
+      </ol>
+      <p class="aside">Reports are public, so leave out secrets and private code. For a security problem, use <a href="https://github.com/neelsatyavolu/consult/security/advisories/new">private vulnerability reporting</a> instead.</p>
+    </section>
   </main>
 
   <footer class="footer wrap">
-    <p>consult 1.0 is open source under the MIT license. Source on <a href="https://github.com/neelsatyavolu/consult">GitHub</a>, package on <a href="https://www.npmjs.com/package/consult-mcp">npm</a>.</p>
+    <p>consult 1.0 is open source under the MIT license. Source on <a href="https://github.com/neelsatyavolu/consult">GitHub</a>, package on <a href="https://www.npmjs.com/package/consult-mcp">npm</a>. <a href="https://github.com/neelsatyavolu/consult/issues/new?template=bug_report.yml">Report a bug</a>.</p>
     <p>Made by <a href="https://n3el.dev">Neel</a>.</p>
   </footer>
 </body>

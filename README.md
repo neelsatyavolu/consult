@@ -241,6 +241,13 @@ Releases: bump `version` in `package.json`, then push a matching tag (`git tag v
 
 The landing page is in [`site/`](site) and deploys to [getconsult.dev](https://getconsult.dev) on Vercel. The old address, consult.n3el.dev, redirects there.
 
+## Reporting bugs
+
+1. Run `npx -y consult-mcp@latest doctor` and copy its output. It shows the consult version, your platform, each agent CLI and what's misconfigured, with your home directory as `~`.
+2. [Open a bug report](https://github.com/neelsatyavolu/consult/issues/new?template=bug_report.yml) and paste it in.
+
+Security problems go to [private vulnerability reporting](https://github.com/neelsatyavolu/consult/security/advisories/new) instead (see [SECURITY.md](SECURITY.md)).
+
 ## License
 
 [MIT](LICENSE)
