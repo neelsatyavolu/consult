@@ -16,10 +16,13 @@ const entry = (sessionId: string, repoKey: string, overrides: Partial<SessionEnt
 
 function setup(settings: Settings, overrides: Partial<SessionsDeps> = {}) {
   const deps: SessionsDeps = {
-    self: () => ({ repoKey: "/a/.git", sessionId: "me" }),
+    self: () => ({ repoKey: "/a/.git", cwd: "/work/me", sessionId: "me" }),
     settings: () => settings,
     listLive: () => [entry("me", "/a/.git"), entry("same-repo", "/a/.git", { branch: "feat" }), entry("elsewhere", "/b/.git")],
-    describe: (e) => (e.sessionId === "same-repo" ? { title: "Auth refactor", lastActive: "2026-10-01T11:00:00.000Z" } : {}),
+    describe: (e) =>
+      e.sessionId === "same-repo"
+        ? { title: "Auth refactor", lastPrompt: "move tokens to the keychain", lastActive: "2026-10-01T11:00:00.000Z" }
+        : {},
     askFork: vi.fn(async (target) => ({ agent: target.agent, answer: "We renamed it.", sessionId: "fork-1", durationMs: 5 })),
     enqueue: vi.fn((_recipient, from, text) => ({ version: 1 as const, id: "m-1", from, sentAt: "2026-10-12T10:00:00.000Z", text })),
     claim: vi.fn(() => []),
@@ -38,6 +41,7 @@ describe("live sessions service", () => {
         cwd: "/work/same-repo",
         branch: "feat",
         title: "Auth refactor",
+        last_prompt: "move tokens to the keychain",
         started_at: "2026-10-01T10:00:00.000Z",
         last_active: "2026-10-01T11:00:00.000Z",
       },
@@ -47,6 +51,18 @@ describe("live sessions service", () => {
   it("lists every other session in machine scope", () => {
     const { sessions } = setup(withSessionsMode(DEFAULT_SETTINGS, "machine"));
     expect(sessions.list().map((s) => s.session_id)).toEqual(["same-repo", "elsewhere"]);
+  });
+
+  it("adds sessions in folders above or below this one in tree scope", () => {
+    const { sessions } = setup(withSessionsMode(DEFAULT_SETTINGS, "tree"), {
+      listLive: () => [
+        entry("me", "/a/.git"),
+        entry("parent", "/work", { cwd: "/work" }),
+        entry("child", "/c/.git", { cwd: "/work/me/packages/c" }),
+        entry("sibling", "/b/.git"),
+      ],
+    });
+    expect(sessions.list().map((s) => s.session_id)).toEqual(["parent", "child"]);
   });
 
   it("refuses to list or ask once live sessions are turned off, without a restart", async () => {
@@ -115,7 +131,7 @@ describe("session messages", () => {
   });
 
   it("refuses to send before this session is registered", async () => {
-    const { sessions } = setup(on, { self: () => ({ repoKey: "/a/.git" }) });
+    const { sessions } = setup(on, { self: () => ({ repoKey: "/a/.git", cwd: "/work/me" }) });
     await expect(sessions.send("same-repo", "hi")).rejects.toThrow(/not registered/);
   });
 

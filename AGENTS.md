@@ -33,6 +33,7 @@
 | `src/prompt.ts` | Advisor briefing prepended to each new session |
 | `src/settings.ts`, `src/tui.ts` | Settings file, `consult settings` TUI, install-time question |
 | `src/sessions/*.ts`, `src/session-tools.ts` | Live sessions: registry, identity, scope, `list_sessions`/`ask_session` |
+| `src/instructions-install.ts` | consult's section in each host's global CLAUDE.md / AGENTS.md |
 | `src/sessions/inbox.ts`, `src/hook.ts`, `src/hooks-install.ts` | Session messages: inbox files, `consult hook` delivery, hook entries in each host's hook file |
 | `test/fixtures/` | Recorded CLI output that adapter tests parse |
 | `site/` | Static landing page, deployed to getconsult.dev on Vercel (consult.n3el.dev redirects there) |

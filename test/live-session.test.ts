@@ -44,7 +44,7 @@ describe("startLiveSession", () => {
       startedAt: "2026-10-01T10:00:00.000Z",
       transcriptPath: rollout(A),
     });
-    expect(live.self()).toEqual({ repoKey: join(opts.root, ".git"), sessionId: A });
+    expect(live.self()).toEqual({ repoKey: join(opts.root, ".git"), cwd: opts.root, sessionId: A });
     stop.abort();
   });
 
@@ -80,7 +80,7 @@ describe("startLiveSession", () => {
     const opts = options(4244, identity, stop.signal);
     const live = await startLiveSession(opts);
     expect(existsSync(join(opts.dir, "4244.json"))).toBe(false);
-    expect(live.self()).toEqual({ repoKey: join(opts.root, ".git") });
+    expect(live.self()).toEqual({ repoKey: join(opts.root, ".git"), cwd: opts.root });
     stop.abort();
   });
 

@@ -235,7 +235,7 @@
       <dl class="tools">
         <div class="tool">
           <dt><code><span class="fn">list_sessions</span>()</code></dt>
-          <dd>The other live sessions you allow: agent, directory, git branch, title, and when each started and was last active. Nothing else from their conversations.</dd>
+          <dd>The other live sessions you allow: agent, directory, git branch, title, its user’s latest prompt, and when each started and was last active. Nothing else from their conversations.</dd>
         </div>
         <div class="tool">
           <dt><code><span class="fn">ask_session</span>(session_id, question, effort?)</code></dt>
@@ -251,6 +251,7 @@
           <tbody>
             <tr><th scope="row">off</th><td>Nobody. The tools don’t appear. This is the default.</td></tr>
             <tr><th scope="row">repo</th><td>Sessions in the same git repository, including its worktrees.</td></tr>
+            <tr><th scope="row">tree</th><td>The same repo, plus sessions in folders above or below this one.</td></tr>
             <tr><th scope="row">machine</th><td>Every consult session you run on this machine.</td></tr>
           </tbody>
         </table>

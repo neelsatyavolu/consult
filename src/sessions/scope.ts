@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { Scope } from "../settings.js";
 import type { Runner } from "../types.js";
 
@@ -29,6 +29,18 @@ export async function gitBranch(run: Runner, cwd: string): Promise<string | unde
   return branch && branch !== "HEAD" ? branch : undefined;
 }
 
-export function inScope(self: { readonly repoKey: string }, other: { readonly repoKey: string }, scope: Scope): boolean {
-  return scope === "machine" || self.repoKey === other.repoKey;
+/** True when `child` is `parent` or a folder below it. */
+function within(parent: string, child: string): boolean {
+  const rel = relative(real(parent), real(child));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+interface Located {
+  readonly repoKey: string;
+  readonly cwd: string;
+}
+
+export function inScope(self: Located, other: Located, scope: Scope): boolean {
+  if (scope === "machine" || self.repoKey === other.repoKey) return true;
+  return scope === "tree" && (within(self.cwd, other.cwd) || within(other.cwd, self.cwd));
 }

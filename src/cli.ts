@@ -14,6 +14,7 @@ import { progressLog } from "./narrate.js";
 import { hookReply, rewakeText } from "./hook.js";
 import { diagnose, formatChecks } from "./doctor.js";
 import { applyHooks, hasConsultHook, type HookResult } from "./hooks-install.js";
+import { applyInstructions, hasInstructions } from "./instructions-install.js";
 import { findOnPath, install, isRegistered, PACKAGE_NAME, serverCommand, uninstall } from "./install.js";
 import {
   DEFAULT_SETTINGS,
@@ -25,6 +26,7 @@ import {
   withMessagesEnabled,
   withSessionsMode,
   type SessionsMode,
+  type Settings,
 } from "./settings.js";
 import { collectChanges, reviewQuestion } from "./review.js";
 import { sessionsSupported, SESSIONS_UNSUPPORTED } from "./platform.js";
@@ -107,6 +109,7 @@ async function serve(): Promise<void> {
     warn: (message) => process.stderr.write(`consult: ${message}\n`),
   });
   refreshClaudeHooks();
+  refreshInstructions();
   const tasks = tasksEnabled()
     ? createTaskManager({
         run,
@@ -354,6 +357,33 @@ function refreshClaudeHooks(): void {
   }
 }
 
+/** Invalid settings mean every optional feature is off. */
+function currentSettings(): Settings {
+  try {
+    return loadSettings(settingsPath());
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/** Puts consult's block in the instructions file of `agents` and removes it from every other installed CLI. Reports only what changed. */
+function setInstructions(agents: readonly HostName[], settings: Settings): readonly HookResult[] {
+  const hosts = installedHosts();
+  return [
+    ...applyInstructions(hosts.filter((agent) => agents.includes(agent)), settings),
+    ...applyInstructions(hosts.filter((agent) => !agents.includes(agent)), undefined),
+  ].filter((r) => r.changed || !r.ok);
+}
+
+/** Like the hooks, the instructions follow the current release and settings wherever install already wrote them. */
+function refreshInstructions(): void {
+  try {
+    applyInstructions(installedHosts().filter((agent) => hasInstructions(agent)), currentSettings());
+  } catch {
+    // Reinstalling fixes it; the server works either way.
+  }
+}
+
 /** Never fails and never prints anything but a hook reply: the host runs this on every tool call. */
 async function hookCommandMain(argv: readonly string[]): Promise<void> {
   try {
@@ -405,6 +435,8 @@ async function main(argv: readonly string[]): Promise<void> {
         await configureSessions(flag);
         const hooks = setMessageHooks((await configureMessages(messagesFlag)) ? installedHosts() : []);
         if (hooks.length > 0) report(hooks);
+        const instructions = setInstructions(installedHosts(), currentSettings());
+        if (instructions.length > 0) report(instructions);
         process.stdout.write("Restart running agent sessions to pick up the new tools.\n");
       } else if (flag || messagesFlag !== undefined) {
         process.stderr.write("consult: live sessions and messages settings left unchanged because registration failed\n");
@@ -427,12 +459,13 @@ async function main(argv: readonly string[]): Promise<void> {
         register: (agents) => install(run, cmd, agents),
         unregister: (agents) => uninstall(run, agents),
         setMessageHooks,
+        setInstructions,
         sessionsSupported: sessionsSupported(),
       });
       return;
     }
     case "uninstall":
-      report([...(await uninstall(run, installedHosts())), ...setMessageHooks([])]);
+      report([...(await uninstall(run, installedHosts())), ...setMessageHooks([]), ...setInstructions([], DEFAULT_SETTINGS)]);
       return;
     case "--version":
     case "-v":

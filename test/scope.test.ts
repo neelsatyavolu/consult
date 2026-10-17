@@ -54,10 +54,21 @@ describe("gitBranch", () => {
 
 describe("inScope", () => {
   it("matches only the same repo in repo scope, and everything in machine scope", () => {
-    const a = { repoKey: "/a/.git" };
-    const b = { repoKey: "/b/.git" };
-    expect(inScope(a, { repoKey: "/a/.git" }, "repo")).toBe(true);
+    const a = { repoKey: "/a/.git", cwd: "/a" };
+    const b = { repoKey: "/b/.git", cwd: "/b" };
+    expect(inScope(a, { repoKey: "/a/.git", cwd: "/a/sub" }, "repo")).toBe(true);
     expect(inScope(a, b, "repo")).toBe(false);
     expect(inScope(a, b, "machine")).toBe(true);
+  });
+
+  it("adds folders above and below in tree scope, but not siblings or lookalike prefixes", () => {
+    const self = { repoKey: "/work/app/.git", cwd: "/work/app" };
+    expect(inScope(self, { repoKey: "/work/app/.git", cwd: "/work/app" }, "tree")).toBe(true);
+    expect(inScope(self, { repoKey: "/work", cwd: "/work" }, "tree")).toBe(true);
+    expect(inScope(self, { repoKey: "/work/app/vendor/x/.git", cwd: "/work/app/vendor/x" }, "tree")).toBe(true);
+    expect(inScope(self, { repoKey: "/work/other/.git", cwd: "/work/other" }, "tree")).toBe(false);
+    expect(inScope(self, { repoKey: "/work/app2", cwd: "/work/app2" }, "tree")).toBe(false);
+    expect(inScope(self, { repoKey: "/work/app/..cache", cwd: "/work/app/..cache" }, "tree")).toBe(true);
+    expect(inScope(self, { repoKey: "/work", cwd: "/work" }, "repo")).toBe(false);
   });
 });

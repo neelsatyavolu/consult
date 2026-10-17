@@ -3,13 +3,13 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 
-export const SESSIONS_MODES = ["off", "repo", "machine"] as const;
+export const SESSIONS_MODES = ["off", "repo", "tree", "machine"] as const;
 export type SessionsMode = (typeof SESSIONS_MODES)[number];
 export type Scope = Exclude<SessionsMode, "off">;
 
 const schema = z.object({
   version: z.literal(1),
-  sessions: z.object({ enabled: z.boolean(), scope: z.enum(["repo", "machine"]) }),
+  sessions: z.object({ enabled: z.boolean(), scope: z.enum(["repo", "tree", "machine"]) }),
   // Added after the first release, so files written before it have no tasks entry.
   tasks: z.object({ enabled: z.boolean() }).default({ enabled: false }),
   messages: z.object({ enabled: z.boolean() }).default({ enabled: false }),

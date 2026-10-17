@@ -50,6 +50,8 @@ Each entry sets `PATH` to the directories holding the launcher (`npx` or `node`)
 
 With [session messages](#session-messages) on, install also adds consult's hooks to each CLI's own hook file: `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.grok/hooks/consult.json`. Other hooks in those files are left as they are, and `uninstall` or turning messages off removes consult's. The server started through `npx consult-mcp@latest` also rewrites consult's own Claude Code entries when they differ from the current release's, so hook fixes reach you without reinstalling.
 
+Install also adds a short `consult` section to each CLI's global instructions file (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.grok/AGENTS.md`) so agents know what consult can do: ask advisors, and, when they are on, ask and message live sessions and dispatch tasks. It sits between `<!-- consult:start -->` and `<!-- consult:end -->` comments; the rest of the file is left as it is. `consult settings` keeps it in step with your choices, the server refreshes it on start, and `uninstall` removes it.
+
 To pin to a specific build instead of following `@latest`, install globally with `npm i -g consult-mcp` and run `consult install`, or run `node dist/cli.js install` from a checkout. Hosts then launch that exact script.
 </details>
 
@@ -111,13 +113,13 @@ Progress goes to stderr and the reviews to stdout, one section per advisor, each
 
 Off by default. When on, agents can ask the agent sessions you already have running, not only fresh advisors. For example, the Codex session working on your API can ask the Claude Code session that wrote the client what it changed.
 
-- **`list_sessions`** lists other live sessions: agent, session id, directory, git branch, title, and when each started and was last active. Nothing else from their conversations.
+- **`list_sessions`** lists other live sessions: agent, session id, directory, git branch, title, its user's latest prompt (first 200 characters, so you can tell what it is working on), and when each started and was last active. Nothing else from their conversations.
 - **`ask_session`** `{session_id, question, effort?}` asks a read-only **copy** of that session. consult forks it (`claude --resume <id> --fork-session`, `codex exec fork <id>`, `grok --resume <id> --fork-session`) with the same containment as any advisor. The copy knows everything the session has seen, while the session itself is not interrupted and never sees the question. Pass the reply's `session_id` and `cwd` to `ask_agent` for follow-ups.
 
 Turn it on when you install, or later:
 
 ```bash
-npx -y consult-mcp@latest install --sessions=repo   # or off, machine; without the flag, install asks when run in a terminal
+npx -y consult-mcp@latest install --sessions=repo   # or off, tree, machine; without the flag, install asks when run in a terminal
 npx -y consult-mcp@latest settings                  # interactive: live sessions, messages, task dispatch, and which agents use consult
 ```
 
@@ -125,6 +127,7 @@ npx -y consult-mcp@latest settings                  # interactive: live sessions
 | --- | --- |
 | `off` (default) | Nobody. The tools don't appear. |
 | `repo` | Sessions in the same git repository, including its worktrees (outside git: the same directory) |
+| `tree` | Everything `repo` allows, plus sessions whose directory is above or below this one, such as a session in `~/code` and one in `~/code/app` |
 | `machine` | Every consult session you run on this machine |
 
 Settings are stored in `$XDG_CONFIG_HOME/consult/settings.json` (default `~/.config/consult/`). Running sessions register in `$XDG_STATE_HOME/consult/sessions/` (default `~/.local/state/consult/`), and only you can read those files. Turning sessions on takes effect in new agent sessions; turning them off, or changing the scope, applies immediately.

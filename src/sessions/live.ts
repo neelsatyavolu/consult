@@ -69,5 +69,5 @@ export async function startLiveSession(opts: LiveOptions): Promise<{ readonly se
     },
     { once: true },
   );
-  return { self: () => ({ repoKey: key, ...(written ? { sessionId: written.sessionId } : {}) }) };
+  return { self: () => ({ repoKey: key, cwd: opts.cwd, ...(written ? { sessionId: written.sessionId } : {}) }) };
 }

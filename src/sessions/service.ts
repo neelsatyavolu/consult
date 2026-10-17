@@ -9,6 +9,7 @@ import { inScope } from "./scope.js";
 /** This server's own session: its repo, and its session id once known. */
 export interface Self {
   readonly repoKey: string;
+  readonly cwd: string;
   readonly sessionId?: string;
 }
 
@@ -19,6 +20,8 @@ export interface SessionView {
   readonly cwd: string;
   readonly branch?: string;
   readonly title?: string;
+  /** The session's latest prompt from its user, shortened: what it is working on now. */
+  readonly last_prompt?: string;
   readonly started_at: string;
   readonly last_active?: string;
 }
@@ -75,6 +78,7 @@ function toView(entry: SessionEntry, details: SessionDetails): SessionView {
     cwd: entry.cwd,
     ...(entry.branch ? { branch: entry.branch.slice(0, MAX_BRANCH) } : {}),
     ...(details.title ? { title: details.title } : {}),
+    ...(details.lastPrompt ? { last_prompt: details.lastPrompt } : {}),
     started_at: entry.startedAt,
     ...(details.lastActive ? { last_active: details.lastActive } : {}),
   };

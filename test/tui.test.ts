@@ -23,7 +23,7 @@ describe("parseSessionsFlag", () => {
   });
 
   it("rejects anything else and lists the allowed values", () => {
-    expect(() => parseSessionsFlag("all")).toThrow(/off, repo, machine/);
+    expect(() => parseSessionsFlag("all")).toThrow(/off, repo, tree, machine/);
   });
 });
 
@@ -83,6 +83,7 @@ describe("runSettings", () => {
       register: async () => [],
       unregister: async () => [],
       setMessageHooks: () => [],
+      setInstructions: () => [],
     });
     expect(log.warn).toHaveBeenCalledWith(expect.stringMatching(/codex: could not parse config/));
     expect(multiselect).toHaveBeenCalledWith(expect.objectContaining({ initialValues: ["claude"] }));

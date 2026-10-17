@@ -17,6 +17,7 @@ import type { HostName } from "./types.js";
 const MODE_OPTIONS = [
   { value: "off", label: "Off", hint: "default: agents can't see each other's sessions" },
   { value: "repo", label: "Same repo", hint: "sessions in the same git repository and its worktrees" },
+  { value: "tree", label: "Folder tree", hint: "the same repo, plus sessions in folders above or below this one" },
   { value: "machine", label: "Whole machine", hint: "every consult session you run" },
 ] as const;
 
@@ -97,6 +98,8 @@ export interface SettingsIo {
   readonly unregister: (agents: readonly HostName[]) => Promise<readonly InstallResult[]>;
   /** Puts the message hook in these agents and removes it from the others; returns what changed. */
   readonly setMessageHooks: (agents: readonly HostName[]) => readonly InstallResult[];
+  /** Writes consult's block for these settings into these agents' instructions files and removes it from the others. */
+  readonly setInstructions: (agents: readonly HostName[], settings: Settings) => readonly InstallResult[];
   /** False on platforms without live sessions: their questions are skipped and the settings kept as they are. */
   readonly sessionsSupported?: boolean;
 }
@@ -156,7 +159,8 @@ export async function runSettings(io: SettingsIo): Promise<void> {
     ...(plan.unregister.length > 0 ? await io.unregister(plan.unregister) : []),
   ].filter((r) => changed.includes(r.agent));
   const hooks = io.setMessageHooks(messagesOn(plan.settings) && supported ? hosts : []);
-  for (const r of [...results, ...hooks]) (r.ok ? log.success : log.error)(r.message);
+  const instructions = io.setInstructions(hosts, plan.settings);
+  for (const r of [...results, ...hooks, ...instructions]) (r.ok ? log.success : log.error)(r.message);
   const messagesState = messagesOn(plan.settings) ? "on" : "off";
   const sessionsState = supported ? `Live sessions: ${mode}. Session messages: ${messagesState}. ` : "";
   outro(`${sessionsState}Task dispatch: ${tasks ? "on" : "off"}. Restart running agent sessions to apply.`);
