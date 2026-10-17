@@ -11,9 +11,9 @@ const allOn: Settings = { version: 1, sessions: { enabled: true, scope: "repo" }
 describe("instructionsPath", () => {
   it("uses each host's global instructions file", () => {
     const env = { CLAUDE_CONFIG_DIR: "/c", CODEX_HOME: "/x", HOME: "/h" };
-    expect(instructionsPath("claude", env)).toBe("/c/CLAUDE.md");
-    expect(instructionsPath("codex", env)).toBe("/x/AGENTS.md");
-    expect(instructionsPath("grok", env)).toMatch(/\.grok\/AGENTS\.md$/);
+    expect(instructionsPath("claude", env)).toBe(join("/c", "CLAUDE.md"));
+    expect(instructionsPath("codex", env)).toBe(join("/x", "AGENTS.md"));
+    expect(instructionsPath("grok", env)).toMatch(/\.grok[\\/]AGENTS\.md$/);
   });
 });
 
