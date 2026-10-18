@@ -410,6 +410,7 @@ h1 {
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--fg-3);
+  overflow-wrap: anywhere;
 }
 
 .pulse {
@@ -425,6 +426,16 @@ h1 {
   color: var(--fg-3);
   font-size: 12px !important;
   overflow-wrap: anywhere;
+}
+
+/* Consecutive progress lines read as one terminal log. */
+.body .progress + .progress {
+  margin-top: 2px;
+}
+
+/* A section heading from the tool's output, such as `## codex`, opens its turn. */
+.body > .meta:first-child {
+  margin-top: 0 !important;
 }
 
 /* Live sessions: Codex asks, and a copy of the Claude session answers on a rule in its own color. */
