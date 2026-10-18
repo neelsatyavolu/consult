@@ -27,6 +27,8 @@ describe("instructionsBlock", () => {
 
     const on = instructionsBlock(allOn);
     for (const tool of ["ask_session", "list_sessions", "send_message", "dispatch_task"]) expect(on).toContain(tool);
+    expect(on).toMatch(/see files, commits or branches change that you did not change/);
+    expect(on).toMatch(/coordinate when two sessions need the same files/);
   });
 
   it("leaves out messages while live sessions are off", () => {
