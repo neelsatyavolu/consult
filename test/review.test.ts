@@ -79,6 +79,55 @@ describe("collectChanges", () => {
     expect(changes.base).toBe("main");
   });
 
+  describe("for a pull request", () => {
+    const head = (dir: string) => git(dir, "rev-parse", "HEAD").toString().trim();
+    // main moves on after feature branches off, so only a merge-base diff leaves main's new commit out.
+    function prRepo() {
+      const dir = repo();
+      git(dir, "checkout", "-q", "-b", "feature");
+      writeFileSync(join(dir, "a.ts"), "export const a = 3;\n");
+      git(dir, "commit", "-q", "-am", "change");
+      const headOid = head(dir);
+      git(dir, "checkout", "-q", "main");
+      writeFileSync(join(dir, "main-only.ts"), "export const m = 1;\n");
+      git(dir, "add", ".");
+      git(dir, "commit", "-q", "-m", "main moves on");
+      const baseOid = head(dir);
+      git(dir, "checkout", "-q", "feature");
+      return { dir, pr: { number: 7, baseName: "main", baseOid, headOid } };
+    }
+
+    it("diffs the PR's commits since the merge base, as GitHub shows them, without untracked files", async () => {
+      const { dir, pr } = prRepo();
+      writeFileSync(join(dir, "untracked.ts"), "x\n");
+      const changes = await collectChanges(run, dir, pr);
+      expect(changes.diff).toContain("+export const a = 3;");
+      expect(changes.diff).not.toContain("main-only.ts");
+      expect(changes.untracked).toEqual([]);
+      expect(changes.base).toBe("main");
+      expect(changes.pr).toBe(7);
+    });
+
+    it("refuses uncommitted changes to tracked files, which advisors would read instead of the PR", async () => {
+      const { dir, pr } = prRepo();
+      writeFileSync(join(dir, "a.ts"), "export const a = 4;\n");
+      await expect(collectChanges(run, dir, pr)).rejects.toThrow(/uncommitted changes.*stash/);
+      git(dir, "add", "a.ts");
+      await expect(collectChanges(run, dir, pr)).rejects.toThrow(/uncommitted changes/);
+    });
+
+    it("refuses when HEAD is not the PR's head commit", async () => {
+      const { dir, pr } = prRepo();
+      git(dir, "checkout", "-q", "main");
+      await expect(collectChanges(run, dir, pr)).rejects.toThrow(/gh pr checkout 7/);
+    });
+
+    it("asks for a fetch when the base commit is missing", async () => {
+      const { dir, pr } = prRepo();
+      await expect(collectChanges(run, dir, { ...pr, baseOid: "1".repeat(40) })).rejects.toThrow(/git fetch/);
+    });
+  });
+
   it("works in a repository with no commits yet", async () => {
     const dir = mkdtempSync(join(tmpdir(), "consult-review-"));
     git(dir, "init", "-q");
@@ -130,6 +179,13 @@ describe("reviewQuestion", () => {
     expect(q).toContain("since it branched from main");
     expect(q).toContain("Focus especially on: concurrency in the sync code");
     expect(q).toMatch(/cut at about/);
+  });
+
+  it("names the pull request and leaves out uncommitted work", () => {
+    const q = reviewQuestion({ ...changes, untracked: [], base: "main", pr: 7 });
+    expect(q).toContain("pull request #7");
+    expect(q).toContain("since it branched from main");
+    expect(q).not.toMatch(/uncommitted/);
   });
 
   it("opens the diff with a fence no line in the diff can close", () => {

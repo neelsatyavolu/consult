@@ -1,5 +1,6 @@
 import { assertDirectory } from "./consult.js";
 import { argSize, maxCommandLine } from "./platform.js";
+import type { PullRequest } from "./pr.js";
 import { AdvisorError, type Runner, type RunResult } from "./types.js";
 
 /** Diff bytes collected at most; reviewQuestion cuts further so the whole question fits one command line. */
@@ -21,6 +22,8 @@ export interface Changes {
   readonly truncated: boolean;
   /** The branch or commit the changes are compared with; absent for uncommitted changes against HEAD. */
   readonly base?: string;
+  /** The pull request whose commits these are; uncommitted work is then left out. */
+  readonly pr?: number;
 }
 
 const STOPPED: Record<NonNullable<RunResult["stopped"]>, string> = {
@@ -31,11 +34,16 @@ const STOPPED: Record<NonNullable<RunResult["stopped"]>, string> = {
 
 /**
  * The changes to review in the repository holding `cwd`: everything not yet committed (staged, unstaged and
- * untracked files), or with `base`, everything since the current branch left it. External diff, textconv,
- * fsmonitor and clean/process filter commands are off, so collecting the diff runs nothing but git itself.
+ * untracked files), or with `base`, everything since the current branch left it. With a pull request, only its
+ * commits since the merge base with its base commit, which is the diff GitHub shows, and HEAD must be its head.
+ * External diff, textconv, fsmonitor and clean/process filter commands are off, so collecting the diff runs
+ * nothing but git itself.
  */
-export async function collectChanges(run: Runner, cwd: string, base?: string, signal?: AbortSignal): Promise<Changes> {
+export async function collectChanges(run: Runner, cwd: string, target?: string | PullRequest, signal?: AbortSignal): Promise<Changes> {
+  const pr = typeof target === "object" ? target : undefined;
+  const base = typeof target === "object" ? target.baseOid : target;
   if (base !== undefined && !BASE_PATTERN.test(base)) throw new AdvisorError(`base must be a branch, tag or commit name, got ${JSON.stringify(base)}`);
+  if (pr && !BASE_PATTERN.test(pr.headOid)) throw new AdvisorError(`head must be a commit name, got ${JSON.stringify(pr.headOid)}`);
   assertDirectory(cwd);
   const git = async (dir: string, args: readonly string[], maxOutputBytes = 64 * 1024 * 1024) => {
     const res = await run("git", ["--no-pager", "-c", "core.quotepath=off", "-c", "core.fsmonitor=false", ...args], {
@@ -61,7 +69,25 @@ export async function collectChanges(run: Runner, cwd: string, base?: string, si
   const inRoot = (args: readonly string[], max?: number) => git(root, [...noFilters, ...args], max);
 
   let ranges: readonly (readonly string[])[];
-  if (base !== undefined) {
+  if (pr) {
+    const head = (await inRoot(["rev-parse", "--verify", "--quiet", "HEAD"])).stdout.trim();
+    if (head !== pr.headOid) {
+      throw new AdvisorError(`HEAD is not the head of pull request #${pr.number} (${pr.headOid.slice(0, 7)}): check it out first with gh pr checkout ${pr.number}`);
+    }
+    if ((await inRoot(["rev-parse", "--verify", "--quiet", `${pr.baseOid}^{commit}`])).code !== 0) {
+      throw new AdvisorError(`the base commit of pull request #${pr.number} (${pr.baseOid.slice(0, 7)}, ${pr.baseName}) is not in this repository: run git fetch`);
+    }
+    // Advisors read the working tree, so it must match the commits under review.
+    const dirty = await inRoot(["diff", "--name-only", "--no-ext-diff", "HEAD"]);
+    if (dirty.code !== 0) throw failed(dirty);
+    if (dirty.stdout.trim()) {
+      throw new AdvisorError(`pull request #${pr.number} is checked out with uncommitted changes, which advisors would read instead of the PR: stash or commit them first`);
+    }
+    // The head commit, not HEAD, so a commit or checkout made meanwhile can't change what is reviewed.
+    const mergeBase = await inRoot(["merge-base", pr.baseOid, pr.headOid]);
+    if (mergeBase.code !== 0) throw new AdvisorError(`pull request #${pr.number} and ${pr.baseName} have no common ancestor`);
+    ranges = [[mergeBase.stdout.trim(), pr.headOid]];
+  } else if (base !== undefined) {
     if ((await inRoot(["rev-parse", "--verify", "--quiet", `${base}^{commit}`])).code !== 0) throw new AdvisorError(`unknown base: ${base}`);
     const mergeBase = await inRoot(["merge-base", base, "HEAD"]);
     if (mergeBase.code !== 0) throw new AdvisorError(`${base} and HEAD have no common ancestor`);
@@ -75,15 +101,18 @@ export async function collectChanges(run: Runner, cwd: string, base?: string, si
   const flags = ["--no-color", "--no-ext-diff", "--no-textconv"];
   const diffs = await Promise.all(ranges.map((r) => inRoot(["diff", ...flags, ...r], MAX_DIFF_BYTES + 1_000_000)));
   const stats = await Promise.all(ranges.map((r) => inRoot(["diff", "--stat", ...flags, ...r])));
-  const untrackedRes = await inRoot(["ls-files", "--others", "--exclude-standard"]);
-  for (const res of [...stats, untrackedRes]) if (res.code !== 0) throw failed(res);
+  // Untracked files are not part of a pull request.
+  const untrackedRes = pr ? undefined : await inRoot(["ls-files", "--others", "--exclude-standard"]);
+  for (const res of [...stats, ...(untrackedRes ? [untrackedRes] : [])]) if (res.code !== 0) throw failed(res);
   // A diff stopped for its size is kept: it is cut to size below anyway.
   for (const res of diffs) if (res.code !== 0 && res.stopped !== "output_limit") throw failed(res);
 
   const diff = diffs.map((d) => d.stdout).join("");
-  const untracked = untrackedRes.stdout.split("\n").filter(Boolean);
+  const untracked = untrackedRes ? untrackedRes.stdout.split("\n").filter(Boolean) : [];
   if (!diff.trim() && untracked.length === 0) {
-    throw new AdvisorError(base ? `no changes to review since ${base}` : "no changes to review: the working tree matches HEAD");
+    throw new AdvisorError(
+      pr ? `pull request #${pr.number} has no changes since ${pr.baseName}` : base ? `no changes to review since ${base}` : "no changes to review: the working tree matches HEAD",
+    );
   }
   const stat = stats.map((r) => r.stdout.trimEnd()).filter(Boolean).join("\n");
   const cut = cutToBytes(diff, MAX_DIFF_BYTES);
@@ -93,7 +122,7 @@ export async function collectChanges(run: Runner, cwd: string, base?: string, si
     diff: cut.text,
     untracked,
     truncated: cut.truncated || diffs.some((d) => d.stopped === "output_limit"),
-    ...(base !== undefined ? { base } : {}),
+    ...(pr ? { base: pr.baseName, pr: pr.number } : base !== undefined ? { base } : {}),
   };
 }
 
@@ -130,7 +159,9 @@ If nothing is worth fixing, say so plainly instead of inventing findings.`;
 
 /** The question each advisor gets for a review of `changes`. It fits one command line on this platform. */
 export function reviewQuestion(changes: Changes, focus?: string): string {
-  const scope = changes.base ? `the changes on this branch since it branched from ${changes.base}, including uncommitted work` : "the uncommitted changes in this repository";
+  const scope = changes.pr
+    ? `pull request #${changes.pr}: the commits on this branch since it branched from ${changes.base}`
+    : changes.base ? `the changes on this branch since it branched from ${changes.base}, including uncommitted work` : "the uncommitted changes in this repository";
   const shown = changes.untracked.slice(0, MAX_UNTRACKED);
   const more = changes.untracked.length - shown.length;
   const untracked = shown.length

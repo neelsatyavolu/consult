@@ -147,7 +147,7 @@
     <section id="review" class="section wrap" aria-labelledby="review-title">
       <div class="section-head">
         <h2 id="review-title">Every vendor reviews your diff</h2>
-        <p>One command sends your uncommitted changes, or your whole branch, to each agent CLI you have installed. They review in parallel, read the surrounding code to check what they report, and come back with findings: severity, <code>file:line</code>, what goes wrong and how to fix it. Different models catch different bugs, and none of them can change a file.</p>
+        <p>One command sends your uncommitted changes, your whole branch, or a GitHub pull request to each agent CLI you have installed. They review in parallel, read the surrounding code to check what they report, and come back with findings: severity, <code>file:line</code>, what goes wrong and how to fix it. Different models catch different bugs, and none of them can change a file.</p>
         <p>Your agent gets the same review through <code>review_changes</code> before it calls the work done.</p>
       </div>
 
@@ -202,7 +202,7 @@
         <code><span class="prompt" aria-hidden="true">$</span> npx -y consult-mcp@latest review --base main</code>
         <button class="copy" type="button" data-copy="npx -y consult-mcp@latest review --base main" hidden>Copy</button>
       </div>
-      <p class="aside">Progress goes to stderr and the reviews to stdout, one section per advisor, each ending with the command for a follow-up. Without <code>--base</code> it reviews what you haven’t committed yet. Pick advisors with <code>--agents codex,grok</code> and steer them with <code>--focus "the retry path"</code>. The diff goes to each advisor’s provider, the same as when you use that CLI yourself.</p>
+      <p class="aside">Progress goes to stderr and the reviews to stdout, one section per advisor, each ending with the command for a follow-up. Without <code>--base</code> it reviews what you haven’t committed yet. With <code>--pr 42</code> it reviews pull request #42 as GitHub shows it: it looks the PR up with <code>gh</code> and reviews its commits once you have it checked out (<code>gh pr checkout 42</code>). Pick advisors with <code>--agents codex,grok</code> and steer them with <code>--focus "the retry path"</code>. The diff goes to each advisor’s provider, the same as when you use that CLI yourself.</p>
     </section>
 
     <section id="sessions" class="section wrap" aria-labelledby="sessions-title">
@@ -460,6 +460,7 @@
       <pre class="shell" tabindex="0" aria-label="Example terminal commands"><code><span class="prompt">$</span> consult ask codex --model gpt-6-astra "Is the retry logic in src/sync.ts safe?"
 <span class="prompt">$</span> consult ask codex --resume &lt;session_id&gt; "What would you change first?"
 <span class="prompt">$</span> consult review --base main
+<span class="prompt">$</span> consult review --pr 42
 <span class="prompt">$</span> consult doctor --ask
 <span class="prompt">$</span> consult settings</code></pre>
     </section>

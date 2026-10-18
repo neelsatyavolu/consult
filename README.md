@@ -105,7 +105,10 @@ From the shell, `consult review` uses every advisor CLI on your `PATH` unless yo
 ```bash
 consult review --base main --focus "the new caching layer"
 consult review --agents codex --effort high > review.md
+consult review --pr 42
 ```
+
+`--pr <number>` reviews a GitHub pull request. It looks up the PR's base and head commits with `gh pr view` (it needs the [GitHub CLI](https://cli.github.com), signed in), checks that HEAD is the PR's head commit (run `gh pr checkout 42` first) with no uncommitted changes to tracked files, since advisors read the working tree, and reviews the PR's commits since the merge base: the same diff GitHub shows, without uncommitted or untracked files. Only consult runs `gh`; advisors still get the diff and read-only access to the repository.
 
 Progress goes to stderr and the reviews to stdout, one section per advisor, each with the command for a follow-up question in the same conversation. The command exits 1 only if every advisor failed.
 

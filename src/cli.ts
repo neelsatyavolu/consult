@@ -28,6 +28,7 @@ import {
   type SessionsMode,
   type Settings,
 } from "./settings.js";
+import { viewPullRequest } from "./pr.js";
 import { collectChanges, reviewQuestion } from "./review.js";
 import { sessionsSupported, SESSIONS_UNSUPPORTED } from "./platform.js";
 import { run } from "./run.js";
@@ -52,9 +53,10 @@ const USAGE = `consult ${VERSION} - let coding agents ask each other for advice
                                          ask an advisor; it can read --cwd but never change anything
       --model <id>  --effort low|medium|high  --resume <session_id>  --cwd <dir>
       a question of "-" is read from stdin; progress goes to stderr, the answer alone to stdout
-  consult review [--agents a,b] [--base <branch>] [--focus <text>] [--effort low|medium|high] [--cwd <dir>]
-                                         review the uncommitted changes (or the branch since --base) with
-                                         every installed advisor in parallel; findings go to stdout
+  consult review [--agents a,b] [--base <branch> | --pr <number>] [--focus <text>] [--effort low|medium|high] [--cwd <dir>]
+                                         review the uncommitted changes (or the branch since --base, or the
+                                         checked-out pull request's commits, via gh) with every installed
+                                         advisor in parallel; findings go to stdout
   consult doctor [--ask]                 check node, the agent CLIs, registrations, settings and hooks;
                                          --ask also sends each advisor a one-word question to prove it is signed in
   consult agents                         list installed CLIs and models
@@ -219,17 +221,29 @@ function interruptSignal(): AbortSignal {
 async function reviewCommand(argv: readonly string[]): Promise<void> {
   const { values } = parseArgs({
     args: [...argv],
-    options: { agents: { type: "string" }, base: { type: "string" }, focus: { type: "string" }, effort: { type: "string" }, cwd: { type: "string" } },
+    options: {
+      agents: { type: "string" },
+      base: { type: "string" },
+      pr: { type: "string" },
+      focus: { type: "string" },
+      effort: { type: "string" },
+      cwd: { type: "string" },
+    },
   });
   if (values.effort && !EFFORTS.includes(values.effort as Effort)) throw new Error(`effort must be one of ${EFFORTS.join(", ")}`);
+  if (values.pr !== undefined && !/^[1-9]\d*$/.test(values.pr)) throw new Error(`--pr must be a pull request number, got ${values.pr}`);
+  if (values.pr !== undefined && values.base !== undefined) throw new Error("--pr and --base can't be used together: --pr takes the PR's base branch");
   const agents = parseAgents(values.agents);
   const { ask } = consult();
   const signal = interruptSignal();
-  const changes = await collectChanges(run, values.cwd ?? process.cwd(), values.base, signal);
+  const cwd = values.cwd ?? process.cwd();
+  const target = values.pr !== undefined ? await viewPullRequest(run, cwd, Number(values.pr), signal) : values.base;
+  const changes = await collectChanges(run, cwd, target, signal);
   const question = reviewQuestion(changes, values.focus);
   const pending = new Set(agents);
   const progress = progressLog((line) => process.stderr.write(line), () => `waiting on ${[...pending].join(", ")}`, HEARTBEAT_MS);
-  progress.update(`reviewing ${changes.base ? `changes since ${changes.base}` : "uncommitted changes"} with ${agents.join(", ")} (read-only)`);
+  const scope = changes.pr ? `pull request #${changes.pr} (since ${changes.base})` : changes.base ? `changes since ${changes.base}` : "uncommitted changes";
+  progress.update(`reviewing ${scope} with ${agents.join(", ")} (read-only)`);
   let entries;
   try {
     entries = await Promise.all(

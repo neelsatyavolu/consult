@@ -7,12 +7,12 @@
     "source": "github"
   },
   "websiteUrl": "https://getconsult.dev",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "consult-mcp",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "transport": {
         "type": "stdio"
       },
