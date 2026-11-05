@@ -197,6 +197,8 @@ describe("forking a live session", () => {
     expect(inv.args).toContain("--restricted");
     expect(inv.args).toContain("--strict-mcp-config");
     expect(valueAfter(inv.args, "--tools")).toBe("Read,Grep,Glob");
+    // A session started without permission prompts must not come back in bypassPermissions.
+    expect(valueAfter(inv.args, "--permission-mode")).toBe("default");
     expect(valueAfter(inv.args, "--effort")).toBe("low");
     expect(inv.args).not.toContain("--session-id");
     expect(inv.args.at(-1)).toBe("PROMPT");

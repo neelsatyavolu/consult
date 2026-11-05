@@ -10,7 +10,10 @@ interface ClaudeResult {
 
 // --restricted drops every tool that runs commands or code and confines file tools to the cwd;
 // --strict-mcp-config with no --mcp-config loads no MCP servers, so the advisor cannot call consult back.
-const CONTAINMENT = ["--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config"] as const;
+// --permission-mode default: a resumed or forked session otherwise comes back in the mode it was saved
+// in, and Claude Code refuses --restricted in bypassPermissions (a session started with
+// --dangerously-skip-permissions).
+const CONTAINMENT = ["--restricted", "--tools", "Read,Grep,Glob", "--strict-mcp-config", "--permission-mode", "default"] as const;
 
 function invocation(request: AskRequest, prompt: string, session: readonly string[]): Invocation {
   return {
