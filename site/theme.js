@@ -16,6 +16,11 @@
   function apply(mode) {
     if (mode === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", mode);
+    // the kit's system.js reads the ground's tone once; keep it in step when the theme changes
+    if (root.dataset.tone) {
+      var dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+      root.dataset.tone = dark ? "dark" : "light";
+    }
   }
 
   var mode = read();

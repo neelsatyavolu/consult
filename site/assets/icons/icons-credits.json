@@ -1,0 +1,50 @@
+[
+  {
+    "file": "antigravity.svg",
+    "icon": "logos:antigravity",
+    "name": "Antigravity",
+    "kind": "colour",
+    "source": "gilbarbara/logos@d6960edc1b7309d392c76e40d3a320df7f9ff85c",
+    "author": "Gil Barbara",
+    "licence": "CC0-1.0",
+    "url": "https://github.com/gilbarbara/logos",
+    "trademark": true,
+    "markUrl": "https://antigravity.google"
+  },
+  {
+    "file": "claude-code.svg",
+    "icon": "logos:claude-code",
+    "name": "Claude Code",
+    "kind": "colour",
+    "source": "gilbarbara/logos@d6960edc1b7309d392c76e40d3a320df7f9ff85c",
+    "author": "Gil Barbara",
+    "licence": "CC0-1.0",
+    "url": "https://github.com/gilbarbara/logos",
+    "trademark": true,
+    "markUrl": "https://claude.com/product/claude-code"
+  },
+  {
+    "file": "codex.svg",
+    "icon": "logos:codex",
+    "name": "Codex",
+    "kind": "colour",
+    "source": "gilbarbara/logos@d6960edc1b7309d392c76e40d3a320df7f9ff85c",
+    "author": "Gil Barbara",
+    "licence": "CC0-1.0",
+    "url": "https://github.com/gilbarbara/logos",
+    "trademark": true,
+    "markUrl": "https://openai.com/codex/"
+  },
+  {
+    "file": "grok.svg",
+    "icon": "logos:grok-icon",
+    "name": "Grok",
+    "kind": "colour",
+    "source": "gilbarbara/logos@d6960edc1b7309d392c76e40d3a320df7f9ff85c",
+    "author": "Gil Barbara",
+    "licence": "CC0-1.0",
+    "url": "https://github.com/gilbarbara/logos",
+    "trademark": true,
+    "markUrl": "https://grok.com/"
+  }
+]
