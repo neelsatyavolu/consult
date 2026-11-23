@@ -241,7 +241,7 @@
             <tr><th scope="row"><img data-icon="claude-code" src="/assets/icons/claude-code.svg" width="24" height="24" loading="lazy" alt="">claude</th><td><code>-p --restricted --tools Read,Grep,Glob --strict-mcp-config</code></td></tr>
             <tr><th scope="row"><img class="ic-ink" data-icon="codex" src="/assets/icons/codex.svg" width="24" height="24" loading="lazy" alt="">codex</th><td><code>exec</code> with <code>sandbox_mode="read-only"</code>, <code>approval_policy="never"</code>, plugins off, every MCP server disabled by name</td></tr>
             <tr><th scope="row"><img class="ic-ink" data-icon="grok" src="/assets/icons/grok.svg" width="24" height="24" loading="lazy" alt="">grok</th><td><code>--tools read_file,grep,list_dir</code>, the MCP helper tools disallowed</td></tr>
-            <tr><th scope="row"><img data-icon="logos:antigravity" src="/assets/icons/antigravity.svg" width="24" height="24" loading="lazy" alt="">agy</th><td><code>-p</code>, after checking that writes, shell commands and URL fetches need approval, with no MCP servers, plugins or hooks</td></tr>
+            <tr><th scope="row"><img data-icon="logos:antigravity" src="/assets/icons/antigravity.svg" width="24" height="24" loading="lazy" alt="">agy</th><td><code>-p --settings</code> with deny rules for shell commands, file writes, MCP tools and URLs on every call, which win over agy’s own settings and hooks</td></tr>
           </tbody>
         </table>
       </div>

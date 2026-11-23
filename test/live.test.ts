@@ -21,7 +21,7 @@ import type { HostName } from "../src/types.js";
 const live = process.env.CONSULT_LIVE === "1";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const FAST_MODEL: Record<string, string | undefined> = { claude: "haiku" };
-// agy refuses to run unless its own config is contained (see README), so it is only tested when asked for.
+// agy is an advisor only and needs its own install and sign-in, so it is only tested when asked for.
 const ADVISORS = process.env.CONSULT_LIVE_AGY === "1" ? AGENTS : HOSTS;
 
 describe.skipIf(!live)("live MCP server", () => {

@@ -23,7 +23,7 @@ npx -y consult-mcp@latest install
 
 This registers consult with every agent CLI it finds on your `PATH` (`claude`, `codex`, `grok`), at user scope. Restart running agent sessions afterwards.
 
-Antigravity (`agy`) is an advisor only. consult doesn't register itself with agy, because agy can only be kept read-only with no MCP servers enabled ([details](#how-advisors-are-contained)). If you install agy after consult, re-run `install` so the server's `PATH` includes it.
+Antigravity (`agy`) is an advisor only. consult doesn't register itself with agy, because agy advisors run with every MCP tool denied ([details](#how-advisors-are-contained)). If you install agy after consult, re-run `install` so the server's `PATH` includes it.
 
 **It stays up to date.** Hosts launch the server with `npx -y consult-mcp@latest serve`, so each new agent session runs the latest release. Re-running `install` is safe: it replaces an existing registration, including ones written by older versions.
 
@@ -37,7 +37,7 @@ Requirements: Node 22 or later on macOS, Linux or Windows, and at least one of t
 
 On Windows, everything except [live sessions](#live-sessions) and [session messages](#session-messages) works: those find sessions with `ps` and `lsof` and deliver messages through POSIX shell hooks, so they stay off there. consult never runs an advisor through `cmd.exe`, which would reinterpret characters like `&` and `%` in a question: for a CLI installed as an npm `.cmd` shim it runs the script or binary the shim points at directly.
 
-Check the setup with `npx -y consult-mcp@latest doctor`. It reports each agent CLI and its version, whether consult is registered with it, your settings, the message hooks and whether agy's config is read-only, with a fix for each problem. `doctor --ask` also sends each advisor a one-word question, which shows that its CLI is signed in and can answer.
+Check the setup with `npx -y consult-mcp@latest doctor`. It reports each agent CLI and its version, whether consult is registered with it, your settings, the message hooks and whether agy can run read-only (its version and any repository hooks), with a fix for each problem. `doctor --ask` also sends each advisor a one-word question, which shows that its CLI is signed in and can answer.
 
 <details>
 <summary>What install changes</summary>
@@ -180,23 +180,31 @@ Turn it on with `npx -y consult-mcp@latest settings`; it applies to agent sessio
 
 ## How advisors are contained
 
-Every advisor runs headless and read-only, and has no MCP servers. So an advisor can't call consult again, which prevents loops.
+Every advisor runs headless and read-only, and can't use MCP servers. So an advisor can't call consult again, which prevents loops.
 
 | CLI | Flags |
 | --- | --- |
 | claude | `-p --restricted --tools Read,Grep,Glob --strict-mcp-config` |
 | codex | `exec`, `sandbox_mode="read-only"`, `approval_policy="never"`, plugins off, and every enabled MCP server disabled by name (Codex runs MCP tools outside its sandbox) |
 | grok | `--tools read_file,grep,list_dir --disallowed-tools Agent,search_tool,use_tool` (the MCP helper tools can reach servers that write files) |
-| agy | `-p --output-format stream-json --disable-slash-commands`, only after a check of agy's own config (below) |
+| agy | `-p --output-format stream-json --disable-slash-commands --settings` with the permission rules below, on agy 1.5.14 or later |
 
-agy has no flags to restrict its tools or switch off MCP servers (`--mode plan` and `--sandbox` leave write, shell, browser and MCP tools on), so before every call consult checks the config agy will use and refuses to run it unless:
+agy has no flags that remove tools (`--mode plan` and `--sandbox` leave write, shell, browser and MCP tools on). It does have `--settings`, which overrides `settings.json` for one session, and permission deny rules, which win over `toolPermission`, allow rules and hooks that approve a tool call. So every call passes:
 
-- `toolPermission` in `~/.gemini/antigravity-cli/settings.json` is `request-review` (the default) or `strict`. Writes, shell commands and URL fetches then need approval, which headless mode can't ask for, so agy denies them. `always-proceed` and `proceed-in-sandbox` are refused. `strict` denies file reads too, which leaves agy unable to answer most questions.
-- `permissions.allow` in that file is empty, since allow rules let commands run without approval.
-- `agy mcp list` shows no enabled server, and `agy plugin list` shows no plugins (plugins bring their own MCP servers).
-- No hooks or plugins can load: `~/.gemini/config/hooks.json` and `plugins.json` are missing or empty, `~/.gemini/config/plugins/` and `~/.gemini/antigravity-cli/plugins/` are empty, and there is no `.agents`, `.agent`, `_agents` or `_agent` directory from `cwd` up to the repository root. Hooks run commands, and a hook can approve any tool call, which would get around the permission check.
+```json
+{"toolPermission": "request-review", "permissions": {"allow": [], "deny": ["command(*)", "write_file(*)", "mcp(*)", "read_url(*)", "download_url(*)", "execute_url(*)"]}}
+```
 
-The error says what to change. agy is also told to use only its file tools: when a tool is denied it ends the turn without an answer, and consult then reports which tool was denied. Its web search tool is not blocked, so search queries go to Google, the same provider that already receives the question. agy can't fork sessions, so it has no live sessions or task dispatch. Resume with `session_id` works through `--conversation`, but agy starts a new conversation if the id is unknown; the reply's `session_id` then differs from the one you passed.
+This denies shell commands and the Python that `run_workflow` runs, file writes and edits, every MCP tool (including plugin servers), and URL reads, downloads and opens. Subagents inherit it. The browser needs the `/browser` slash command, which `--disable-slash-commands` turns off. It doesn't depend on your own agy config: `always-proceed`, allow rules, MCP servers and plugins can stay as they are. MCP servers still start, but agy can't call their tools, and your global hooks still run their commands. `request-review` alone isn't enough: headless agy still writes files in the workspace under it.
+
+consult also refuses to run agy:
+
+- older than 1.5.14, the version these rules were first checked against (they were rechecked on 1.5.15);
+- where the repository has agy hooks or plugins: `hooks.json`, `plugins.json` or `plugins/` in a `.agents`, `.agent`, `_agents` or `_agent` directory from `cwd` up to the repository root. `--settings` can't switch hooks off, and a repository's hooks would run its commands. Skills, rules and workflows there are fine.
+
+Your own global hooks in `~/.gemini/config/hooks.json` still run, but can't approve past the deny rules. A `PreToolUse` hook that prints `{}` makes agy deny every tool, reads included; when no read gets through, consult reports the hook rather than an answer written blind. A hook should print nothing to leave the decision to agy.
+
+agy is told it is read-only and to avoid `schedule` and background waits, which would hold a headless turn open until the timeout. Its web search tool is not blocked, so search queries go to Google, the same provider that already receives the question. agy can't fork sessions, so it has no live sessions or task dispatch. Resume with `session_id` works through `--conversation`, but agy starts a new conversation if the id is unknown; the reply's `session_id` then differs from the one you passed.
 
 `ask_session` copies use the same flags, plus `--resume <id> --fork-session` (claude, grok) or `exec fork <id>` (codex), so the live session's own transcript is only read.
 

@@ -1,146 +1,90 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { AdvisorError, type Adapter, type AskRequest, type Invocation, type Reply } from "../types.js";
 import { parseJsonLines } from "../jsonl.js";
 
-// agy (Google Antigravity CLI) has no per-call flags to restrict its tools or switch off MCP servers: --mode plan
-// and --sandbox leave write, shell, browser and MCP tools enabled. Its only containment is its own config, so consult
-// checks that before every call and refuses to run agy unless:
-// - toolPermission is "request-review" (the default) or "strict": write, shell and URL-fetch tools then need approval,
-//   which headless mode cannot ask for, so agy denies them. "strict" denies file reads as well, so it is of little use;
-// - permissions.allow is empty: allow rules let commands run without that approval;
-// - no MCP servers are enabled and no plugins are imported (plugins bring their own MCP servers);
-// - no hooks, plugins or workspace customizations can load: hooks run commands and can approve any tool call.
-const GEMINI_DIR = join(homedir(), ".gemini");
-export const AGY_SETTINGS = join(GEMINI_DIR, "antigravity-cli", "settings.json");
+// agy (Google Antigravity CLI) has no flags that remove tools, but --settings overrides settings.json for one
+// session, and permission deny rules beat everything else: toolPermission, allow rules (global or ours) and
+// PreToolUse hooks that answer "allow". Every call passes these rules, so containment does not depend on the
+// user's own agy config. Covered: shell commands and run_workflow's Python (command), file writes and edits
+// (write_file), MCP tools including plugin servers (mcp), and URL reads, downloads and opens; subagents inherit them.
+// MCP servers still start, but none of their tools can be called. agy rejects "unsandboxed" rules from users, and
+// the browser needs the /browser slash command, which --disable-slash-commands turns off. toolPermission
+// "request-review" and an empty allow list are belt and braces: request-review alone lets headless agy write files.
+const DENY = ["command(*)", "write_file(*)", "mcp(*)", "read_url(*)", "download_url(*)", "execute_url(*)"] as const;
+export const CONTAINMENT_SETTINGS = JSON.stringify({ toolPermission: "request-review", permissions: { allow: [], deny: DENY } });
 
-/** Global places agy loads hooks and plugins from. */
-const GLOBAL_CUSTOMIZATIONS = [
-  join(GEMINI_DIR, "config", "hooks.json"),
-  join(GEMINI_DIR, "config", "plugins.json"),
-  join(GEMINI_DIR, "config", "plugins"),
-  join(GEMINI_DIR, "antigravity-cli", "plugins"),
-];
-/** Customization roots agy honours in every directory from the cwd up to the project root. */
+/** The oldest agy these deny rules were verified against. Older versions are refused rather than trusted. */
+export const MIN_AGY_VERSION = "1.5.14";
+
+// Hooks still run their commands for every tool call, and --settings cannot switch them off. The user's own global
+// hooks are theirs to run, but a repository's hooks and plugins would run code from whatever repo the advisor is
+// pointed at, so consult refuses to run agy where they exist. agy reads them from these roots in every directory
+// from the cwd up to the project root.
 const WORKSPACE_ROOTS = [".agents", ".agent", "_agents", "_agent"];
+const WORKSPACE_HOOKS = ["hooks.json", "plugins.json", "plugins"];
+const VERSION_OPTS = { timeoutMs: 30_000 } as const;
 
-// "always-proceed" and "proceed-in-sandbox" run tools without approval.
-const REVIEWED = ["request-review", "strict"];
-const LIST_OPTS = { timeoutMs: 30_000 } as const;
-const NO_PLUGINS = /^No imported plugins\.?$/;
-
-export interface AgyConfig {
-  /** settings.json text; undefined when the file does not exist. */
-  readonly settings: string | undefined;
-  readonly mcpList: string;
-  readonly pluginList: string;
-  /** Hook, plugin and customization paths that exist and are not empty. */
-  readonly customizations: readonly string[];
-}
-
-function settingsProblems(text: string | undefined): readonly string[] {
-  let settings: unknown = {};
-  if (text !== undefined) {
-    try {
-      settings = JSON.parse(text);
-    } catch {
-      return [`could not parse ${AGY_SETTINGS}`];
-    }
-  }
-  if (typeof settings !== "object" || settings === null || Array.isArray(settings)) return [`${AGY_SETTINGS} is not a JSON object`];
-  const { toolPermission, permissions } = settings as { toolPermission?: unknown; permissions?: { allow?: unknown } };
-  const allow = permissions?.allow;
-  return [
-    ...(toolPermission === undefined || REVIEWED.includes(toolPermission as string)
-      ? []
-      : [`toolPermission is ${JSON.stringify(toolPermission)}, not "request-review"`]),
-    ...(allow === undefined || (Array.isArray(allow) && allow.length === 0) ? [] : ["permissions.allow is not empty"]),
-  ];
-}
-
-/** Names of MCP servers in an `agy mcp list` table whose status is not "disabled"; undefined if there is no table. */
-function enabledMcpServers(out: string): readonly string[] | undefined {
-  const [header, ...rows] = out.split("\n").filter((l) => l.trim());
-  const typeCol = header?.indexOf("TYPE") ?? -1;
-  const statusCol = header?.indexOf("STATUS") ?? -1;
-  if (!header?.startsWith("NAME") || typeCol < 0 || statusCol < 0) return undefined;
-  return rows.filter((row) => row.slice(statusCol).trim().split(/\s+/)[0] !== "disabled").map((row) => row.slice(0, typeCol).trim());
-}
-
-/** Why agy would not run read-only and MCP-free with this config. Empty when it would. */
-export function containmentProblems(config: AgyConfig): readonly string[] {
-  const servers = enabledMcpServers(config.mcpList);
-  return [
-    ...settingsProblems(config.settings),
-    ...(servers === undefined ? ["could not read the output of `agy mcp list`"] : []),
-    ...(servers?.length ? [`MCP servers enabled: ${servers.join(", ")}`] : []),
-    ...(NO_PLUGINS.test(config.pluginList.trim()) ? [] : ["plugins are imported (see `agy plugin list`)"]),
-    ...(config.customizations.length ? [`hooks or plugins could load from ${config.customizations.join(", ")}`] : []),
-  ];
-}
-
-function readIfExists(file: string): string | undefined {
-  try {
-    return readFileSync(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw new AdvisorError(`could not read ${file}: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/** A file with content, or a directory with entries. Unreadable paths count as present, so the check fails closed. */
+/** A non-empty file, or a directory with entries. Unreadable paths count as present, so the check fails closed. */
 function present(path: string): boolean {
   try {
-    return statSync(path).isDirectory() ? readdirSync(path).length > 0 : readFileSync(path, "utf8").trim().length > 0;
+    const stat = statSync(path);
+    return stat.isDirectory() ? readdirSync(path).length > 0 : stat.size > 0;
   } catch (err) {
     return (err as NodeJS.ErrnoException).code !== "ENOENT";
   }
 }
 
-/** The cwd and its parents up to the nearest directory holding .git, or just the cwd outside a repository. */
+/** The real cwd and its parents up to the nearest directory holding .git, or just the cwd outside a repository. */
 function projectDirs(cwd: string): readonly string[] {
+  // agy runs in the real directory, so walk its parents rather than those of a symlink pointing into a repository.
+  const start = realpathSync(resolve(cwd));
   const dirs: string[] = [];
-  for (let dir = resolve(cwd); ; dir = dirname(dir)) {
+  for (let dir = start; ; dir = dirname(dir)) {
     dirs.push(dir);
     if (existsSync(join(dir, ".git"))) return dirs;
-    if (dirname(dir) === dir) return [resolve(cwd)];
+    if (dirname(dir) === dir) return [start];
   }
 }
 
-/** Hook, plugin and customization paths agy would load for a call in `cwd`. */
-export function findCustomizations(cwd: string, globals: readonly string[] = GLOBAL_CUSTOMIZATIONS): readonly string[] {
-  const workspace = projectDirs(cwd).flatMap((dir) => WORKSPACE_ROOTS.map((name) => join(dir, name)));
-  return [...globals, ...workspace].filter(present);
+/** Repository hook and plugin paths agy would load for a call in `cwd`. */
+export function findWorkspaceHooks(cwd: string): readonly string[] {
+  return projectDirs(cwd)
+    .flatMap((dir) => WORKSPACE_ROOTS.flatMap((root) => WORKSPACE_HOOKS.map((name) => join(dir, root, name))))
+    .filter(present);
 }
 
-/** A prepare step that throws unless agy's current config keeps it read-only. It adds no args. */
-export function agyPrepare(settingsFile: string, globals: readonly string[] = GLOBAL_CUSTOMIZATIONS): NonNullable<Adapter["prepare"]> {
-  return async (run, cwd, signal) => {
-    const list = async (what: string) => {
-      const res = await run("agy", [what, "list"], { cwd, signal, ...LIST_OPTS });
-      if (res.code !== 0) throw new AdvisorError(`could not run \`agy ${what} list\` to check containment: ${res.stderr.trim().slice(-500)}`);
-      return res.stdout;
-    };
-    const problems = containmentProblems({
-      settings: readIfExists(settingsFile),
-      mcpList: await list("mcp"),
-      pluginList: await list("plugin"),
-      customizations: findCustomizations(cwd, globals),
-    });
-    if (problems.length > 0) {
-      throw new AdvisorError(
-        `agy's config is not read-only, so consult will not run it: ${problems.join("; ")}. ` +
-          `Set "toolPermission": "request-review" and remove permissions.allow in ${settingsFile}, ` +
-          "disable MCP servers with `agy mcp disable <name>`, and remove hooks and plugins.",
-      );
-    }
-    return [];
-  };
+/** True when `version` (e.g. "1.5.14" or "agy 1.5.14", a release, not a prerelease) is at least `min`. */
+export function versionAtLeast(version: string, min: string): boolean {
+  const parse = (v: string) => v.trim().match(/^(?:agy\s+)?(\d+)\.(\d+)\.(\d+)$/)?.slice(1).map(Number);
+  const have = parse(version);
+  const want = parse(min)!;
+  if (!have) return false;
+  const diff = have.map((n, i) => n - want[i]!).find((d) => d !== 0) ?? 0;
+  return diff >= 0;
 }
 
-// agy ends the turn without an answer when a tool is denied, and it often reaches for a shell grep or cat first.
-const TOOLS_NOTE = "Use only your file tools (view_file, grep_search, find_by_name, list_dir). Shell commands and URL fetches are denied here and would end your turn without an answer.";
+/** Throws unless agy is new enough for the deny rules and no repository hooks or plugins would load. Adds no args. */
+const prepare: NonNullable<Adapter["prepare"]> = async (run, cwd, signal) => {
+  const res = await run("agy", ["--version"], { cwd, signal, ...VERSION_OPTS });
+  const version = res.stdout.trim();
+  if (res.code !== 0 || !versionAtLeast(version, MIN_AGY_VERSION)) {
+    throw new AdvisorError(
+      `consult needs agy ${MIN_AGY_VERSION} or later to keep it read-only (found ${version || "no version"}); run \`agy update\``,
+    );
+  }
+  const hooks = findWorkspaceHooks(cwd);
+  if (hooks.length > 0) {
+    throw new AdvisorError(
+      `consult will not run agy here: this repository has agy hooks or plugins, which would run its commands (${hooks.join(", ")})`,
+    );
+  }
+  return [];
+};
+
+// The model cannot see the deny rules, and `schedule` or background waits hold a headless turn open until timeout.
+const TOOLS_NOTE =
+  "You are advising read-only. Use read_file to read files and directories. Shell commands, file writes and edits, URL reads and MCP tools are denied here. Do not use schedule, wait or background tasks.";
 
 function invocation(request: AskRequest, prompt: string): Invocation {
   return {
@@ -149,6 +93,7 @@ function invocation(request: AskRequest, prompt: string): Invocation {
       "-p", `${TOOLS_NOTE}\n\n${prompt}`,
       "--output-format", "stream-json",
       "--disable-slash-commands",
+      "--settings", CONTAINMENT_SETTINGS,
       ...(request.sessionId ? ["--conversation", request.sessionId] : []),
       ...(request.model ? ["--model", request.model] : []),
       ...(request.effort ? ["--effort", request.effort] : []),
@@ -164,23 +109,48 @@ interface AgyResult {
   readonly denied_actions?: readonly { readonly action?: unknown }[];
 }
 
-function parse(stdout: string): Reply {
-  const result = parseJsonLines(stdout).findLast((e) => e.event === "result")?.result as AgyResult | undefined;
-  if (!result) throw new AdvisorError(`agy returned no result: ${stdout.slice(0, 500)}`);
-  if (result.status !== "SUCCESS") throw new AdvisorError(`agy reported an error: ${String(result.error || result.status || "unknown error")}`);
-  if (typeof result.response !== "string" || !result.response.trim() || typeof result.conversation_id !== "string" || !result.conversation_id) {
-    // agy ends the turn without an answer when it is denied a tool, so say which.
-    const denied = (result.denied_actions ?? []).map((d) => String(d.action));
-    throw new AdvisorError(denied.length ? `agy stopped without an answer after being denied: ${denied.join(", ")}` : "agy returned no answer");
-  }
-  return { answer: result.response.trimEnd(), sessionId: result.conversation_id };
-}
-
 interface StepUpdate {
   readonly step_type?: string;
   readonly state?: string;
   readonly tool_name?: string;
   readonly tool_info?: { readonly parameters?: Record<string, unknown>; readonly error?: { readonly message?: string } };
+}
+
+const HOOK_DENIAL = "denied by pre-tool hook";
+const READ_TOOLS = new Set(["read_file", "view_file", "list_dir", "grep_search", "find_by_name"]);
+
+/**
+ * Read tools a PreToolUse hook denied, when no read got through. A hook that prints `{}` denies every tool call,
+ * reads included; an answer written after that was written blind. A hook that blocks only some files is left alone.
+ */
+function blindedByHook(events: readonly Record<string, unknown>[]): readonly string[] {
+  const reads = events.flatMap((e) => {
+    const step = e.step_update as StepUpdate | undefined;
+    return step?.step_type === "tool" && step.tool_name && READ_TOOLS.has(step.tool_name) ? [step] : [];
+  });
+  if (reads.some((step) => step.state === "DONE")) return [];
+  const denied = reads.filter((step) => step.tool_info?.error?.message?.includes(HOOK_DENIAL)).map((step) => step.tool_name!);
+  return [...new Set(denied)];
+}
+
+function parse(stdout: string): Reply {
+  const events = parseJsonLines(stdout);
+  const result = events.findLast((e) => e.event === "result")?.result as AgyResult | undefined;
+  if (!result) throw new AdvisorError(`agy returned no result: ${stdout.slice(0, 500)}`);
+  if (result.status !== "SUCCESS") throw new AdvisorError(`agy reported an error: ${String(result.error || result.status || "unknown error")}`);
+  const hooked = blindedByHook(events);
+  if (hooked.length > 0) {
+    // The answer would be written without the files it tried to read, so it is not worth returning.
+    throw new AdvisorError(
+      `an agy hook denied ${hooked.join(", ")}, so agy could not read the repository. ` +
+        "Check the PreToolUse hooks in ~/.gemini/config/hooks.json and agy plugins: a hook that prints {} denies every tool; it should print nothing to leave the decision to agy.",
+    );
+  }
+  if (typeof result.response !== "string" || !result.response.trim() || typeof result.conversation_id !== "string" || !result.conversation_id) {
+    const denied = (result.denied_actions ?? []).map((d) => String(d.action));
+    throw new AdvisorError(denied.length ? `agy stopped without an answer after being denied: ${denied.join(", ")}` : "agy returned no answer");
+  }
+  return { answer: result.response.trimEnd(), sessionId: result.conversation_id };
 }
 
 function describeTool(name: string, params: Record<string, unknown> = {}): string {
@@ -200,7 +170,7 @@ function describe(event: Record<string, unknown>): string | undefined {
 export const agy: Adapter = {
   name: "agy",
   command: "agy",
-  prepare: agyPrepare(AGY_SETTINGS),
+  prepare,
 
   build(request, prompt) {
     return invocation(request, prompt);
